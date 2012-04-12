@@ -262,25 +262,35 @@ def one_d_kde(x, weights=None, range=None, gridsize=100):
 
 
 def two_expo(x,p) : 
-    return p[0]*np.exp(x/p[1]) + p[2]*np.exp(x/p[3])
+    return p[0]*np.exp(-x/p[1]) + p[2]*np.exp(-x/p[3])
 
 
 def two_sech2(x,p) : 
-    return p[0]*np.sech(x/p[1])**2 + p[2]*np.sech(x/p[3])**2
+    return p[0]*sech(-x/p[1])**2 + p[2]*sech(-x/p[3])**2
 
-def fit_vertical_profile(prof,zmin=0,zmax=3,func=two_expo) : 
+def sech(x) : 
+    return 1/np.cosh(x)
+
+def overplot_fit(p,func=two_sech2) : 
+    x = np.linspace(0,p[3]*5,100)
+    plt.plot(x,func(x,p))
+
+def fit_vertical_profile(prof,zmin=0,zmax=3,func=two_sech2) : 
     from scipy import optimize 
 
     fitfunc = lambda p, x : func(x,p)
-    errfunc = lambda p, x, y : fitfunc(p,x) - y
+    errfunc = lambda p, x, y, err : (y-fitfunc(p,x))/err
 
     # initial guesses 
-    p0 = [1.0,0.3,.1,1.0]
+    p0 = [1,.5,.01,1]
 
-    p1, done = optimize.leastsq(errfunc, p0, 
-                                args = (prof['rbins'], 
-                                        prof['density'].in_units('Msol pc^-3')))
+    r = np.array(prof['rbins'])
+    den = np.array(prof['density'].in_units('Msol pc^-3'))
+    err = den/np.ones(len(den))
+
+    p1, res = optimize.leastsq(errfunc, p0, args = (r,den,err))
 
 
     
-    
+    return p1, res
+
