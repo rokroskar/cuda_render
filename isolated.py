@@ -261,5 +261,26 @@ def one_d_kde(x, weights=None, range=None, gridsize=100):
     return kern_nx, inv_cov, xx
 
 
+def two_expo(x,p) : 
+    return p[0]*np.exp(x/p[1]) + p[2]*np.exp(x/p[3])
 
+
+def two_sech2(x,p) : 
+    return p[0]*np.sech(x/p[1])**2 + p[2]*np.sech(x/p[3])**2
+
+def fit_vertical_profile(prof,zmin=0,zmax=3,func=two_expo) : 
+    from scipy import optimize 
+
+    fitfunc = lambda p, x : func(x,p)
+    errfunc = lambda p, x, y : fitfunc(p,x) - y
+
+    # initial guesses 
+    p0 = [1.0,0.3,.1,1.0]
+
+    p1, done = optimize.leastsq(errfunc, p0, 
+                                args = (prof['rbins'], 
+                                        prof['density'].in_units('Msol pc^-3')))
+
+
+    
     
