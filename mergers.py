@@ -25,7 +25,7 @@ def satellite_orbit(parent_dir='./') :
     import sys
     import parallel_util
 
-    filelist = glob.glob('[2,3]/*.00???')
+    filelist = glob.glob(parent_dir+'/[5,6]/*.00???')
     filelist.sort()
 
     s = pynbody.load(filelist[0])
@@ -416,9 +416,9 @@ def merger_profile_evolution(list1,list2) :
         ax_z = fig_z.add_subplot(4,5,i+1)
 
         p1_r = Profile(s1.s,max=15)
-        p1_z = VerticalProfile(s1.s,4,5,3,nbins=30)
+        p1_z = VerticalProfile(s1.s,2.5,3.5,3,nbins=30)
         p2_r = Profile(s2.s[ind],max=15)
-        p2_z = VerticalProfile(s2.s[ind],4,5,3,nbins=30)
+        p2_z = VerticalProfile(s2.s[ind],2.5,3.5,3,nbins=30)
         
 
         ax_r.plot(p1_r['rbins'],p1_r['density'].in_units('Msol kpc^-2'))
@@ -448,3 +448,35 @@ def merger_profile_evolution(list1,list2) :
             for ax in [ax_r,ax_z] : ax.set_xticklabels("")
 
 
+
+def plot_structural_parameters(flist1,flist2) : 
+    
+    fits1 = iso.disk_structure_evolution(flist1)
+    fits2 = iso.disk_structure_evolution(flist2,merger=True)
+    
+    fig = plt.figure(figsize=(6,10))
+    
+
+    # radial scale length
+    ax = fig.add_subplot(211)
+    
+    ax.plot(fits1[0],fits1[1][:,1],label='isolated')
+    ax.plot(fits2[0],fits2[1][:,1],label='merger')
+    ax.set_xticklabels("")
+    plt.legend(loc='upper left', prop=FontProperties(size='small'))
+    ax.set_ylabel(r'$h_R$ [kpc]')
+    
+    
+    # vertical scale height
+
+    ax = fig.add_subplot(212)
+
+    ax.plot(fits1[0],fits1[3][:,1], 'b-', fits1[0],fits1[3][:,3], 'b--')
+    ax.plot(fits2[0],fits2[3][:,1], 'g-', fits2[0],fits2[3][:,3], 'g--')
+
+    ax.set_ylabel(r'$h_z$ [kpc]')
+    ax.set_xlabel(r'$t$ [Gyr]')
+
+    fig.subplots_adjust(hspace=.1)
+    
+    return fits1, fits2

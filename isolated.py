@@ -14,6 +14,8 @@ University of Zurich
 
 
 import pynbody
+from pynbody.analysis.angmom import faceon
+from pynbody.analysis.profile import Profile, VerticalProfile
 import spiral_structure as ss
 import numpy as np
 import warnings
@@ -61,12 +63,25 @@ def get_rform(sim) :
     except KeyError: 
         pass
 
+    try : 
+        sim['posform']
+        starlog = True
+    except KeyError:
+        starlog = False
+        sim['posform'] = sim['rform']
+        sim['posform'].units = sim['x'].units
+        del(sim['rform'])
+            
     for i, arr in enumerate(['x','y','z']) : 
         #spl = sp.interpolate.interp1d(data['times'], data['cofm'][:,i],kind='linear',bounds_error=False)
- #        spl = sp.interpolate.UnivariateSpline(data['times'], data['cofm'][:,i])
+        #        spl = sp.interpolate.UnivariateSpline(data['times'], data['cofm'][:,i]
+        if starlog: pass
+        else : sim[arr+'form'] = sim['posform'][:,i]
+
         sim[arr+'form'] -= sp.interp(sim['tform'],data['times'],data['cofm'][:,i])
-                   
-    sim['rform'] = np.sqrt(np.sum(sim['posform']**2,axis=1))
+        
+    sim['posform'] = np.array([sim['xform'],sim['yform'],sim['zform']]).T
+    sim['rform'] = np.sqrt(np.sum(sim['posform'][:,0:2]**2,axis=1))
 
 
 def get_cofm(dir='./', filepattern='*/*.0????') : 
@@ -260,10 +275,11 @@ def one_d_kde(x, weights=None, range=None, gridsize=100):
 
     return kern_nx, inv_cov, xx
 
-
+##################################
+# fitting functions
+#
 def two_expo(x,p) : 
     return p[0]*np.exp(-x/p[1]) + p[2]*np.exp(-x/p[3])
-
 
 def two_sech2(x,p) : 
     return p[0]*sech(-x/p[1])**2 + p[2]*sech(-x/p[3])**2
@@ -271,26 +287,89 @@ def two_sech2(x,p) :
 def sech(x) : 
     return 1/np.cosh(x)
 
-def overplot_fit(p,func=two_sech2) : 
-    x = np.linspace(0,p[3]*5,100)
-    plt.plot(x,func(x,p))
+def expo(x,p) : 
+    return p[0]*np.exp(-x/p[1])
 
-def fit_vertical_profile(prof,zmin=0,zmax=3,func=two_sech2) : 
+###################################
+
+def overplot_fit(p,func) : 
+    x = np.linspace(0,p[1]*5,100)
+    plt.plot(x,func(x,p), '--')
+
+def fit_profile(prof,func,p0,units,xmin=0,xmax=10) : 
     from scipy import optimize 
 
     fitfunc = lambda p, x : func(x,p)
     errfunc = lambda p, x, y, err : (y-fitfunc(p,x))/err
 
-    # initial guesses 
-    p0 = [1,.5,.01,1]
+    ind = np.where((prof['rbins'] > xmin)&(prof['rbins'] <= xmax))[0]
 
-    r = np.array(prof['rbins'])
-    den = np.array(prof['density'].in_units('Msol pc^-3'))
-    err = den/np.ones(len(den))
+    r = np.array(prof['rbins'])[ind]
+    den = np.array(prof['density'].in_units(units)[ind])
+    err = den/np.sqrt(prof['n'][ind])
 
     p1, res = optimize.leastsq(errfunc, p0, args = (r,den,err))
 
+    red_chisq = sum((den - func(r,p1))**2/err**2)/(len(r)-len(p1)-1)
+
+    return p1, red_chisq
+
+@interruptible
+def single_profile_fits(x) : 
+    from pynbody.analysis.profile import Profile, VerticalProfile
+
+    filename, merger = x
+
+    s = pynbody.load(filename)
+    pynbody.analysis.angmom.faceon(s)
+    
+    if merger : s = s.s[np.where(s.s['mass']>.1)[0]]
+
+    p  = Profile(s.s,min=0,max=15,nbins=30)
+    fit_r, chsq = fit_profile(p,expo,[1e9,3],'Msol kpc^-2',3,6)
+
+    # make vertical profiles at 1, 2, 3 scalelengths
+    pv1 = VerticalProfile(s.s,fit_r[1]*.8,fit_r[1]*1.2,3.0,nbins=30)
+    pv2 = VerticalProfile(s.s,fit_r[1]*1.8,fit_r[1]*2.2,3.0,nbins=30)
+    pv3 = VerticalProfile(s.s,fit_r[1]*2.8,fit_r[1]*3.2,3.0,nbins=30)
+
+    fit_v1, chsq1 = fit_profile(pv1,two_sech2,[0.1,.2,0.01,.5],'Msol pc^-3',0,3)
+    fit_v2, chsq2 = fit_profile(pv2,two_sech2,[0.1,.2,0.01,.5],'Msol pc^-3',0,3)
+    fit_v3, chsq3 = fit_profile(pv3,two_sech2,[0.1,.2,0.01,.5],'Msol pc^-3',0,3)
+    
+    return s.properties['time'].in_units('Gyr'),fit_r, fit_v1, fit_v2, fit_v3
+
+def disk_structure_evolution(flist, merger=False) : 
+    
+    times = np.zeros(len(flist))
+    rfits = np.zeros((len(flist),2))
+    v1fits = np.zeros((len(flist),4))
+    v2fits = np.zeros((len(flist),4))
+    v3fits = np.zeros((len(flist),4))
 
     
-    return p1, res
+    res = run_parallel(single_profile_fits, flist, [merger], processes=10)
 
+    for i in xrange(len(flist)) : 
+        times[i]  = res[i][0]
+        rfits[i]  = res[i][1]
+        v1fits[i] = res[i][2]
+        v2fits[i] = res[i][3]
+        v3fits[i] = res[i][4]
+
+    return times, rfits, v1fits, v2fits, v3fits
+
+    
+def plot_profile_fit(filename, merger, rmin=3, rmax=6) : 
+    
+    s = pynbody.load(filename)
+    faceon(s)
+    if merger : s = s.s[np.where(s.s['mass']>.1)[0]]
+    p = Profile(s.s,min=0,max=15,nbins=30)
+    fit, chsq = fit_profile(p,expo,[1e9,3],'Msol kpc^-2',rmin,rmax)
+
+    plt.figure()
+    plt.plot(p['rbins'],p['density'].in_units('Msol kpc^-2'))
+    overplot_fit(fit,expo)
+    print fit, chsq
+    plt.semilogy()

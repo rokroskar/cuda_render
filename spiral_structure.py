@@ -85,13 +85,13 @@ def calculate_fourier_coefficients(R_phi_t_matrix, phi):
 
 def fourier_sequence_parallel(parent_dir='./', file_pattern = '/[1-9]/*.00???', block = True,
                               output=True, overwrite=False, nbins=50, max=15, min=0, cutoff_age=0.5, ind = None, 
-                              procs = pynbody.config['number_of_threads']):
+                              procs = int(pynbody.config['number_of_threads']), test = False):
 
 
     flist = glob.glob(parent_dir + file_pattern)
     flist.sort()
 
-    res = run_parallel(fourier_single_file, flist, [output,overwrite,nbins, max, min, cutoff_age,ind],processes=procs)
+    res = run_parallel(fourier_single_file, flist, [output,overwrite,nbins, max, min, cutoff_age,ind],processes=procs, test = test)
     
     c_array = np.empty((len(flist),7,nbins),dtype=complex)
     mass = np.zeros([len(flist),nbins])
