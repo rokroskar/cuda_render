@@ -52,18 +52,8 @@ def write_paramfile(stepnum):
     pfile.close()
 
     
-def make_gas_map(s, center=True):
-    
-    s.physical_units()
-    if center:
-        pynbody.analysis.angmom.sideon(s.g,mode='ssc',disk_size='1 kpc')
-    plt.figure(figsize=(10,10))
-    
-    pynbody.plot.image(s.g,width=60,cmap=cm.Blues_r,units='Msol kpc^-2')
-    plt.annotate('z = %.2f'%(1.0/s.properties['a']-1), (-25,25), color = "white",
-                 weight='bold')
-    plt.savefig(s.filename+'_gas_map.png', format='png')
 
+    
 
 if __name__ == '__main__':
     make_gas_map(load_ramses(int(sys.argv[1])))

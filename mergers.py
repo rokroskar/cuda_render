@@ -25,7 +25,7 @@ def satellite_orbit(parent_dir='./') :
     import sys
     import parallel_util
 
-    filelist = glob.glob(parent_dir+'/[5,6]/*.00???')
+    filelist = glob.glob(parent_dir+'/[5,6,7,8]/*.00???')
     filelist.sort()
 
     s = pynbody.load(filelist[0])

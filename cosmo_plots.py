@@ -122,3 +122,127 @@ def make_single_output_profiles(s,h):
 
     del(fig)
     
+def make_gas_stars_overlay(s,width=20,yng = pynbody.filt.LowPass('age',1.0),center=False) : 
+
+    fig = plt.figure(figsize=(15,10))
+
+    if center: 
+        s.physical_units()
+        pynbody.analysis.angmom.faceon(s)
+
+    cold = pynbody.filt.LowPass('temp', 1e5)
+    gas_dens = pynbody.plot.image(s.g[cold],width=width,units='Msol kpc^-2',noplot=True)
+    xsys = np.linspace(-width/2,width/2,len(gas_dens))
+    plt.clf()
+
+    ax = fig.add_subplot(1,2,1)
+    yng_dens = pynbody.plot.image(s.s[yng],  width=width,units='Msol kpc^-2',cmap=plt.cm.Blues_r, show_cbar = False, subplot = ax, vmin=5.5,vmax=10)
+    plt.contour(xsys,xsys,gas_dens,colors='w',levels=np.linspace(7.5,10,5))
+
+    ax = fig.add_subplot(1,2,2)
+    old_dens = pynbody.plot.image(s.s[~yng], width=width,units='Msol kpc^-2',cmap=plt.cm.Reds_r, show_cbar= False, subplot = ax, vmin=6, vmax=10)
+    plt.contour(xsys,xsys,gas_dens,colors='w',levels=np.linspace(7.5,10,5))
+    
+
+def make_gas_map(s, center=True, subplot = False, savefig = False, **kwargs):
+    
+    s.physical_units()
+    if center:
+        pynbody.analysis.angmom.sideon(s.g,mode='ssc',disk_size='1 kpc')
+    
+    if not subplot: 
+        subplot = plt.figure(figsize=(13,10)).add_subplot(111)
+        
+    pynbody.plot.image(s.g,width=60,cmap=plt.cm.Blues_r,units='Msol kpc^-2',subplot=subplot, **kwargs)
+    
+    subplot.annotate('z = %.2f'%(1.0/s.properties['a']-1), 
+                         (-25,25), color = "white", weight='bold')
+    
+    if savefig: 
+        plt.savefig(s.filename+'_gas_map.png', format='png')
+
+def make_fo_eo_map(s, width = 40, center = True, subplot = False, savefig = False,  **kwargs) : 
+    s.physical_units()
+    if center:
+        pynbody.analysis.angmom.sideon(s.g, mode = kwargs.get('mode', 'hyb'), disk_size=kwargs.get('disk_size', '5 kpc'))
+    
+    subplot = plt.figure(figsize=(7,14)).add_subplot(211)
+    pynbody.plot.image(s.g,width=width,cmap=plt.cm.Blues_r,units='Msol kpc^-2',subplot=subplot,show_cbar=False,**kwargs)
+    subplot.annotate('z = %.2f'%(1.0/s.properties['a']-1), 
+                     (-25,25), color = "white", weight='bold')
+    
+    subplot.set_xlabel('')
+    subplot.set_xticklabels('')
+
+    subplot = plt.subplot(212)
+    s.rotate_x(90)
+    pynbody.plot.image(s.g,width=width,cmap=plt.cm.Blues_r,units='Msol kpc^-2',subplot=subplot, show_cbar=False,**kwargs)
+    
+    plt.subplots_adjust(hspace=0.07)
+
+    if hasattr(s,'base') : filename = s.base.filename+'_gas_eofo_map.png'
+    else: filename = s.filename+'_gas_eofo_map.png'
+
+    if savefig: 
+        plt.savefig(filename, format='png')
+
+
+def make_gas_map_wrap(i,ax,flist,**kwargs) : 
+    s = pynbody.load(flist[i])
+    make_gas_map(s.halos()[1],subplot=ax,**kwargs)
+
+def make_func_wrap(i,ax,flist,func,**kwargs) : 
+    s = pynbody.load(flist[i])
+    func(s.halos()[1],subplot=ax,**kwargs)
+
+def make_gas_profile(s, logy=True, prof_name = 'density', center=True, subplot = False, **kwargs) : 
+    from pynbody.analysis.profile import Profile
+
+    s.physical_units()
+    if center: 
+        pynbody.analysis.angmom.faceon(s.g,mode='ssc',disk_size='1 kpc')
+        
+
+    if not subplot: 
+        subplot = plt.figure(figsize=(10,10)).add_subplot()
+    
+    cold = pynbody.filt.LowPass('temp', 1e5)
+    hot = ~cold
+
+    p  = Profile(s.g,       min=0.01,max=100,type='log',ndim=3)
+    pc = Profile(s.g[cold], min=0.01,max=100,type='log',ndim=3)
+    ph = Profile(s.g[hot],  min=0.01,max=100,type='log',ndim=3)
+    
+    subplot.plot(p['rbins'],p[prof_name],label='all')
+    subplot.plot(pc['rbins'],pc[prof_name],label=r'$T < 10^5$')
+    subplot.plot(ph['rbins'],ph[prof_name],label=r'$T > 10^5$')
+    subplot.set_title('z = %.2f'%s.properties['z'])
+    subplot.set_xlabel(r'$R / \mathrm{kpc}')
+    subplot.set_ylabel(r'$'+p[prof_name].units.latex()+'$')
+    if logy: subplot.semilogy()
+            
+def make_gas_fractional_profile(s, logy=False, prof_name = 'density', center=True, subplot = False, **kwargs) : 
+    from pynbody.analysis.profile import Profile
+
+    s.physical_units()
+    if center: 
+        pynbody.analysis.angmom.faceon(s.g,mode='ssc',disk_size='1 kpc')
+        
+
+    if not subplot: 
+        subplot = plt.figure(figsize=(10,10)).add_subplot()
+
+    cold = pynbody.filt.LowPass('temp', 1e5)
+    hot = ~cold
+
+    p  = Profile(s.g,       min=0.01,max=100,type='log',ndim=3)
+    pc = Profile(s.g[cold], min=0.01,max=100,type='log',ndim=3)
+    ph = Profile(s.g[hot],  min=0.01,max=100,type='log',ndim=3)
+    
+    subplot.plot(pc['rbins'],
+                 pc[prof_name]*pc['mass']/(p[prof_name]*p['mass']),
+                 label=r'$T < 10^5$')
+    subplot.plot(ph['rbins'],ph[prof_name]*ph['mass']/(p[prof_name]*p['mass']),label=r'$T > 10^5$')
+    subplot.set_title('z = %.2f'%s.properties['z'])
+    subplot.set_xlabel(r'$R / \mathrm{kpc}')
+    if logy: subplot.semilogy()
