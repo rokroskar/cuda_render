@@ -87,9 +87,9 @@ def smbh_orbits(output=False, processes = multiprocessing.cpu_count()/4):
     plt.ylabel('r [kpc]')
 
     if output:
-        np.savez('bh_orbit',t=t,r=r)
+        np.savez('bh_orbit',t=t,r=r, pos = pos)
 
-    return t, r
+    return t, r, pos
 
 def filelist() : 
     import glob

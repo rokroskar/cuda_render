@@ -65,22 +65,30 @@ def get_rform(sim) :
 
     try : 
         sim['posform']
+        sim['velform']
         starlog = True
     except KeyError:
         starlog = False
         sim['posform'] = sim['rform']
         sim['posform'].units = sim['x'].units
+        sim['velform'] = sim['vform']
+        sim['velform'].units = sim['vx'].units
+
         del(sim['rform'])
             
     for i, arr in enumerate(['x','y','z']) : 
         #spl = sp.interpolate.interp1d(data['times'], data['cofm'][:,i],kind='linear',bounds_error=False)
         #        spl = sp.interpolate.UnivariateSpline(data['times'], data['cofm'][:,i]
         if starlog: pass
-        else : sim[arr+'form'] = sim['posform'][:,i]
+        else : 
+            sim[arr+'form'] = sim['posform'][:,i]
+            sim['v'+arr+'form'] = sim['velform'][:,i]
 
         sim[arr+'form'] -= sp.interp(sim['tform'],data['times'],data['cofm'][:,i])
+        sim['v'+arr+'form'] -= sp.interp(sim['tform'],data['times'],data['vcofm'][:,i])
         
     sim['posform'] = np.array([sim['xform'],sim['yform'],sim['zform']]).T
+    sim['velform'] = np.array([sim['vxform'],sim['vyform'],sim['vzform']]).T
     sim['rform'] = np.sqrt(np.sum(sim['posform'][:,0:2]**2,axis=1))
 
 
@@ -147,6 +155,7 @@ def get_cofm_parallel(dir='./', filepattern='*/*.0????', filelist = None, block 
 
     times = np.empty(len(filelist))
     cofms = np.empty((len(filelist),3))
+    vcofms = np.empty((len(filelist),3))
 
     res = run_parallel(get_cofm_single_file, filelist, [],processes=procs)
     
@@ -156,8 +165,9 @@ def get_cofm_parallel(dir='./', filepattern='*/*.0????', filelist = None, block 
         for i, x in enumerate(res) : 
             times[i] = res[i][0]
             cofms[i] = res[i][1]
+            vcofms[i] = res[i][2]
 
-        np.savez(dir+'cofm.npz', cofm = cofms, times = times)
+        np.savez(dir+'cofm.npz', cofm = cofms, vcofm = vcofms, times = times)
         
     else : 
         return res, filelist
@@ -180,8 +190,10 @@ def get_cofm_single_file(args) :
 
     time = s.properties['a']
     cofm = pynbody.analysis.halo.center(s, retcen=True)
+    s.ancestor['pos']-=cofm
+    vcofm = pynbody.analysis.halo.vel_center(s.s,retcen=True)
 
-    return time, np.array(cofm)
+    return time, np.array(cofm), np.array(vcofm)
 
 
 def plot_dist_mean(x, y, mass, **kwargs) : 

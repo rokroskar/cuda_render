@@ -128,66 +128,57 @@ def combine_starlog(sim1, sim2, starlog1, starlog2, tcut, mcut) :
 ###########################
 
 
-def make_image_figure(si,sm) : 
+def make_image_figure(si,sm_list, titles) : 
 
     
-    fig = plt.figure(figsize=(14,10))
+    fig = plt.figure(figsize=(20,len(sm_list)*5))
+    ncol = 4
+    nrow = len(sm_list)+1
 
-    grid = ImageGrid(fig,111,(2,3), label_mode="L", axes_pad=.2, direction='column')
-
-    inds_old = np.where(sm.s['mass'] > .1)[0]
-    inds_sat = np.where(sm.s['mass'] < .1)[0]
-
+    
 
     vmin, vmax = 6, 12
     
-    for s in [si,sm] : pynbody.analysis.angmom.faceon(s)
+    for i,s in [si]+sm_list : 
+        pynbody.analysis.angmom.faceon(s)
 
-    # isolated
-    # faceon
-    ax = grid[0]
-    pynbody.plot.image(si.s,width=29,units='Msol kpc^-2',threaded=True,
-                       subplot=ax,colorbar=False,vmin=vmin,vmax=vmax)
-    ax.set_title('isolated')
+        inds_old = np.where(s.s['mass'] > .1)[0]
+        inds_sat = np.where(s.s['mass'] < .1)[0]
 
-    # edgeon
-    ax = grid[1]
-    si.rotate_x(90)
-    pynbody.plot.image(si.s,width=29,units='Msol kpc^-2',threaded=True,subplot=ax,colorbar=False,
+
+        ax = fig.add_subplot(i+1,ncol,1)
+        pynbody.plot.image(s.s[inds_old],width=29,units='Msol kpc^-2',threaded=True,
+                           subplot=ax,colorbar=False,vmin=vmin,vmax=vmax)
+        ax.set_title(titles[i])
+        
+        ax = fig.add_subplot(i+1,ncol,2)
+        s.rotate_x(90)
+        pynbody.plot.image(s.s[inds_old],width=29,units='Msol kpc^-2',threaded=True,subplot=ax,colorbar=False,
                        vmin=vmin,vmax=vmax)
-    ax.set_ylabel('$z/\\mathrm{kpc}$')
-    
-    
-    # merger run -- in-situ stars
-    #faceon
-    ax = grid[2]
-    pynbody.analysis.angmom.faceon(sm)
-    pynbody.plot.image(sm.s[inds_old],width=29,units='Msol kpc^-2',threaded=True,subplot=ax,colorbar=False,
-                       vmin=vmin,vmax=vmax)
-    ax.set_title('merger in situ')
+        ax.set_ylabel('$z/\\mathrm{kpc}$')
+        
 
-    # merger run -- satellite stars 
-    # faceon
-    ax = grid[4]
-    pynbody.plot.image(sm.s[inds_sat],width=29,units='Msol kpc^-2',threaded=True,subplot=ax,colorbar=False)
-                       
-    ax.set_title('merger satellite')
-    
-    # merger run -- in-situ stars
-    # edgeon
-    sm.rotate_x(90)
-    ax = grid[3]
-    pynbody.plot.image(sm.s[inds_old],width=29,units='Msol kpc^-2',threaded=True, subplot=ax,colorbar=False,
-                       vmin=vmin,vmax=vmax)
+        if i > 0 : 
+            # merger runs -- show satellite star distributions
+            # faceon
+            ax = fig.add_subplot(i+1,ncol,3)
 
-    # merger run -- satellite stars
-    # edgeon
-    ax = grid[5]
-    pynbody.plot.image(sm.s[inds_sat],width=29,units='Msol kpc^-2',threaded=True, subplot=ax,colorbar=False)
+            s.rotate_x(-90)
+        
+            pynbody.plot.image(s.s[inds_sat],width=29,units='Msol kpc^-2',threaded=True,
+                               subplot=ax,colorbar=False, vmin=vmin,vmax=vmax)
+            ax.set_title(titles[i] + ' in-situ')
+            
+            # sideon
+            ax = fig.add_subplot(i+1,ncol,4)
+            s.rotate_x(90)
+            pynbody.plot.image(s.s[inds_sat],width=29,units='Msol kpc^-2',threaded=True,
+                               subplot=ax,colorbar=False)
+            ax.set_ylabel('$z/\\mathrm{kpc}$')
+                           
+        # reset to faceon
+        s.rotate_x(-90)
     
-    # reset to faceon
-    pynbody.analysis.angmom.faceon(si)
-    pynbody.analysis.angmom.faceon(sm)
 
 
 def make_radial_profile(si,sm) : 
@@ -283,19 +274,21 @@ def make_vertical_profiles(si,sm) :
     ax.set_xlabel(r'$z$ [kpc]')
     ax.set_ylabel(r'$\sigma_{v_z}$ [km/s]')
     
-def make_fourier_comparison(dir1,dir2) : 
+def make_fourier_comparison(dir1,dir2,dir3) : 
 
     data1 = np.load(dir1+'/complete_fourier_fulldisk.npz')
     data2 = np.load(dir2+'/complete_fourier_fulldisk.npz')
+    data3 = np.load(dir3+'/complete_fourier_fulldisk.npz')
 
     plt.figure()
     
     plt.plot(data1['t'],abs(data1['c'][:,2,0]),label='isolated')
-    plt.plot(data2['t'][0::10],abs(data2['c'][0::10][:,2,0]),label='merger')
+    plt.plot(data2['t'][0::10],abs(data2['c'][0::10][:,2,0]),label='merger low')
+    plt.plot(data3['t'][0::10],abs(data3['c'][0::10][:,2,0]),label='merger high')
     plt.xlabel(r'$t$ [Gyr]')
     plt.ylabel(r'$A_2$')
     plt.legend(loc='upper left')
-    
+
     
 def angular_momentum_vector(dir1) : 
     

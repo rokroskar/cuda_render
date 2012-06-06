@@ -84,14 +84,14 @@ def calculate_fourier_coefficients(R_phi_t_matrix, phi):
 
 
 def fourier_sequence_parallel(parent_dir='./', file_pattern = '/[1-9]/*.00???', block = True,
-                              output=True, overwrite=False, nbins=50, max=15, min=0, cutoff_age=0.5, ind = None, 
+                              output=True, overwrite=False, nbins=50, max=15, min=0, cutoff_age=0.5, cutoff_mass = 0.1, ind = None, 
                               procs = int(pynbody.config['number_of_threads']), test = False):
 
 
     flist = glob.glob(parent_dir + file_pattern)
     flist.sort()
 
-    res = run_parallel(fourier_single_file, flist, [output,overwrite,nbins, max, min, cutoff_age,ind],processes=procs, test = test)
+    res = run_parallel(fourier_single_file, flist, [output,overwrite,nbins, max, min, cutoff_age,cutoff_mass,ind],processes=procs, test = test)
     
     c_array = np.empty((len(flist),7,nbins),dtype=complex)
     mass = np.zeros([len(flist),nbins])
@@ -142,7 +142,7 @@ def fourier_sequence(parent_dir='./', file_pattern = '/[1-9]/*.00???', nbins=50,
 def fourier_single_file(a):
     import os 
     
-    name, output, overwrite, nbins, max, min, cutoff_age, ind = a
+    name, output, overwrite, nbins, max, min, cutoff_age, cutoff_mass, ind = a
 
     new = not os.path.isfile(name+".fourier.npz")
     
@@ -150,7 +150,7 @@ def fourier_single_file(a):
         s = pynbody.load(name)
         pynbody.analysis.halo.center(s)
         if ind is None : 
-            ind = np.where((s.s['age'] > cutoff_age) & (s.s['tform'] > 0))[0]
+            ind = np.where((s.s['age'] > cutoff_age) & (s.s['mass'] > cutoff_mass))[0]
 
         p = pynbody.analysis.profile.Profile(s.s[ind],nbins=nbins,max=max,min=min)
         c = p['fourier']['c']

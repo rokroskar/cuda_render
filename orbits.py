@@ -44,8 +44,10 @@ def single_file_pos(file, pinds, family) :
 
         pos = subs[pinds]['pos']
         vel = subs[pinds]['vel']
+        mass = subs[pinds]['mass']
+        #metals = subs[pinds]['metals']
 
-        return np.array(pos), np.array(vel), s.properties['a']
+        return np.array(pos), np.array(vel), np.array(mass), s.properties['a']
     except KeyboardInterrupt: 
         raise KeyboardInterruptError()
 
@@ -53,6 +55,8 @@ def single_file_pos(file, pinds, family) :
 def trace_orbits(filelist, pinds) : 
     pos = SimArray(np.zeros((len(filelist),len(pinds),3)))
     vel = SimArray(np.zeros((len(filelist),len(pinds),3)))
+    mass = SimArry(np.zeros((len(filelist),len(pinds),1)))
+    metals = SimArry(np.zeros((len(filelist),len(pinds),1)))
     time = SimArray(np.zeros(len(filelist)))
     
     cen_size = 5
@@ -74,9 +78,10 @@ def trace_orbits(filelist, pinds) :
         vcen.units = cen['vel'].units
         s['vel']-=vcen
 
-        pos[i], vel[i], time[i] = s.s[pinds]['pos'], s.s[pinds]['vel'], s.properties['a']
+        pos[i], vel[i], mass[i], metals[i], time[i] = \
+            s.s[pinds]['pos'], s.s[pinds]['vel'], s.s[pinds]['mass'], s.s[pinds]['metals'], s.properties['a']
 
-    return pos, vel, time
+    return pos, vel, mass, metals, time
     
 
 
@@ -85,7 +90,7 @@ def trace_orbits_wrap(listinds) :
 
 
 
-def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count()/4, block=True, family='star'): 
+def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count()/4, block=True, test = False, family='star'): 
     
     from multiprocessing import Pool
     import itertools
@@ -94,25 +99,35 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
 
     pos = np.empty((len(filelist), len(pinds), 3))
     vel = np.empty((len(filelist), len(pinds), 3))
+    mass = np.empty((len(filelist), len(pinds)))
+    metals = np.empty((len(filelist), len(pinds)))
     time = np.empty(len(filelist))
 
-    try : 
-        res = np.array(pool.map(trace_orbits_wrap, 
-                                itertools.izip(filelist, itertools.repeat(pinds), itertools.repeat(family))))
-        pool.close()
-    except KeyboardInterrupt : 
-        pool.terminate()
+    if not test: 
 
-    finally: 
-        pool.join()
+        try : 
+            res = np.array(pool.map(trace_orbits_wrap, 
+                                    itertools.izip(filelist, itertools.repeat(pinds), itertools.repeat(family))))
+            pool.close()
+        except KeyboardInterrupt : 
+            pool.terminate()
+
+        finally: 
+            pool.join()
+    else : 
+        res = np.array(map(trace_orbits_wrap, 
+                                    itertools.izip(filelist, itertools.repeat(pinds), itertools.repeat(family))))
 
     for i in range(len(res)) : 
         pos[i] = res[i][0]
         vel[i] = res[i][1]
-        time[i] = res[i][2]
+        mass[i] = res[i][2]
+        metals[i] = res[i][3]
+        time[i] = res[i][4]
+        
 
-    return pos, vel, time        
-
+    return pos, vel, mass, metals, time        
+    
 
 def orbit_cwt(x,y,t,pad=True, ax = None, plot_ridges = False) :
 
