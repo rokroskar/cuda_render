@@ -100,7 +100,7 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
     pos = np.empty((len(filelist), len(pinds), 3))
     vel = np.empty((len(filelist), len(pinds), 3))
     mass = np.empty((len(filelist), len(pinds)))
-    metals = np.empty((len(filelist), len(pinds)))
+#    metals = np.empty((len(filelist), len(pinds)))
     time = np.empty(len(filelist))
 
     if not test: 
@@ -122,11 +122,11 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
         pos[i] = res[i][0]
         vel[i] = res[i][1]
         mass[i] = res[i][2]
-        metals[i] = res[i][3]
-        time[i] = res[i][4]
+#        metals[i] = res[i][3]
+        time[i] = res[i][3]
         
 
-    return pos, vel, mass, metals, time        
+    return pos, vel, mass, time        
     
 
 def orbit_cwt(x,y,t,pad=True, ax = None, plot_ridges = False) :

@@ -73,7 +73,7 @@ def smbh_orbits(output=False, processes = multiprocessing.cpu_count()/4):
 
     assert(len(inds) == 2)
 
-    pos, vel, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark')
+    pos, vel, mass, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark')
 
     dpos = np.diff(pos,axis=1).squeeze()
 
@@ -100,7 +100,7 @@ def filelist() :
 
     for f in flist : 
         stemp = pyn.load(f,only_header=True)
-        print>>sys.stderr, f, stemp.properties['time'].in_units('Gyr')
+        print>>sys.stderr, f, stemp.properties['time'].in_units('s kpc km^-1')
 
 
 def central_gas(path, radius=0.5, fig = None) :
@@ -195,3 +195,42 @@ def sfh_orbit(path):
     ax1.set_xlabel('t [Gyr]')
     ax1.set_xlim(4.9, 5.062)
     fig.savefig("sfh_orbit.pdf", format='pdf')
+
+def overplot_clump_centers(s,clumps,rmax,massmin) : 
+
+
+    # get snapshot center
+
+    cent = pyn.analysis.halo.center(s.g,mode='hyb',retcen=True)
+    print cent
+    # recenter 
+
+    if any(abs(cent) > 1e-10) : 
+        s['pos'] -= cent
+        clumps['pos'] -= cent
+        pyn.plot.image(s.g,width=rmax*2,av_z=True)
+        
+
+    # else the snapshot was already centered
+    
+    center_clumps = np.where((clumps['r'] < rmax) & (clumps['mass'] > massmin))[0]
+    
+    print 'Number of clumps in the center = %d'%len(center_clumps)
+
+    # iterate through the clumps of interest and overplot their positions
+
+    for clump_ind in center_clumps : 
+        
+        clump = s[np.where(s['grp'] == clump_ind+1)[0]]
+
+        clump_center = pyn.analysis.halo.center(clump,mode='ssc',retcen=True)
+
+        cir = plt.Circle((clump_center[0],clump_center[1]), radius=clumps[clump_ind]['eps'],  edgecolor='y', fill = False)
+        plt.gca().add_patch(cir)
+
+#        plt.plot(clump_center[0], clump_center[1], 'ro')
+
+    plt.xlim(-rmax,rmax)
+    plt.ylim(-rmax,rmax)
+
+    
