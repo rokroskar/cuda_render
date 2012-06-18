@@ -168,8 +168,8 @@ def horseshoe_orbits (processors=4) :
     from pynbody.analysis.profile import Profile
     import scipy.interpolate as interpol
 
-#    s1 = pynbody.load('/home/itp/roskar/isolated_runs/12M_hr/6/12M_hr.00650')
-#    s2 = pynbody.load('/home/itp/roskar/isolated_runs/12M_hr/7/12M_hr.00700')
+    s1 = pynbody.load('/home/itp/roskar/isolated_runs/12M_hr/6/12M_hr.00650')
+    s2 = pynbody.load('/home/itp/roskar/isolated_runs/12M_hr/7/12M_hr.00700')
 #    s2 = pynbody.load('/home/itp/roskar/isolated_runs/12M_hr/6/12M_hr.00670')
 
 
@@ -215,13 +215,17 @@ def horseshoe_orbits (processors=4) :
         pynbody.filt.LowPass('tform', sfirst.properties['a'])
     
 
-    simple = (pynbody.filt.HighPass('dj', 250) |
-              pynbody.filt.LowPass('dj', -250)) & \
-              pynbody.filt.LowPass('tform',sfirst.properties['a'])
+    simple = ((pynbody.filt.HighPass('dj', 250) |
+               pynbody.filt.LowPass('dj', -250)) & 
+              pynbody.filt.LowPass('tform',sfirst.properties['a']))
+
+    spec_inds = [640778,1052173,1312193,632547,691094,945673]
+    spec_inds.sort()
 
  #   pinds = simple.where(s1.s)[0]
     pinds = one.where(s1.s)[0]
     #pinds = three.where(s1.s)[0]
+    #pinds = spec_inds
     cr_in_jz = cr_jz[1] - 100
     cr_out_jz = cr_jz[1] + 100
     cr_in_e = interpol.interp1d(p1['j_circ'],p1['E_circ'])(cr_in_jz)
@@ -246,6 +250,7 @@ def horseshoe_orbits (processors=4) :
 
 
     pos, vel, time = orbits.trace_orbits_parallel(flist,pinds,processors)
+#    pos, vel, time = orbits.trace_orbits(flist,pinds)
 
     x = pos[:,:,0].T
     y = pos[:,:,1].T
@@ -270,7 +275,7 @@ def horseshoe_orbits (processors=4) :
 
 
 
-def plot_horseshoes_wavelet(x,y,t,p,omega,npages=8) : 
+def plot_horseshoes_wavelet(x,y,t,p,omega,npages=2) : 
     from matplotlib.collections import LineCollection
     from matplotlib.backends.backend_pdf import PdfPages
     import spiral_structure as ss
@@ -298,7 +303,7 @@ def plot_horseshoes_wavelet(x,y,t,p,omega,npages=8) :
     dt = t - t[0]
     xr = x*np.cos(-omega*dt) - y*np.sin(-omega*dt)
     yr = x*np.sin(-omega*dt) + y*np.cos(-omega*dt)
-    
+    r = np.sqrt(x**2 + y**2)
 
     for i in range(npages) : 
         fig = plt.figure(figsize=(15,15))
@@ -323,7 +328,7 @@ def plot_horseshoes_wavelet(x,y,t,p,omega,npages=8) :
                 plt.annotate(str(j+1), (-8,8), fontsize=12)
 
             else  :
-                ax = plt.axes([0.57,0.095,0.33,0.19])
+                ax = plt.axes([0.60,0.095,0.24,0.22])
                 points = np.array([sp_time,sp_amp]).T.reshape(-1,1,2)
                 plt.ylim(sp_amp.min(), sp_amp.max())
 
@@ -337,35 +342,41 @@ def plot_horseshoes_wavelet(x,y,t,p,omega,npages=8) :
 
 
             if j == perpage-1 :
-                
                 plt.xlabel('$t~\\mathrm{[Gyr]}$')
-                #axt = ax.twinx()
                 plt.ylabel('$A_2$')
-                #plt.plot(0,0)
                 plt.xlim(sp_time[0],sp_time[-1])
                 plt.ylim(sp_amp.min(),sp_amp.max())
-                #axt.set_yticks([0.015,0.03,0.045])
                 plt.annotate('spiral amplitude', (6.1,0.04), fontsize=15)
                 
             else :
                 ax = plt.subplot(nrow,ncol,j*2+2, aspect='equal')
                 cf = orbits.orbit_cwt(x[pind],y[pind],t,ax=ax,plot_ridges=False)
+                
+                ax2 = ax.twinx()
+                ax2.plot(t,r[pind],'k',linewidth=2)
+                ax.set_xlim(t.min(),t.max())
+                ax2.set_ylim(r.min(),r.max())
 
                 if j != perpage-ncol/2 : 
                     ax.xaxis.set_ticklabels("")
                     ax.yaxis.set_ticklabels("")
+                    ax2.yaxis.set_ticklabels("")
+                    
                 else : 
-                    plt.ylabel('$\\mathrm{scale}$')
-                    plt.xlabel('$t~\\mathrm{[Gyr]}$')
-                    cb = plt.colorbar(cf, format = '$%.2f$')
-                    cb.set_label('$\\mathrm{log(Power)}$')
+                    ax.set_ylabel('$\\mathrm{scale}$')
+                    ax.set_xlabel('$t~\\mathrm{[Gyr]}$')
+                    ax2.set_ylabel('$R\\mathrm{ [kpc]}$')
+
+                    
+                    #cb = plt.colorbar(cf, format = '$%.2f$')
+                    #cb.set_label('$\\mathrm{log(Power)}$')
 
         pp.savefig()
 
     pp.close()
 
 
-def plot_horseshoes(x,y,t,omega,p,npages=8) : 
+def plot_horseshoes(x,y,t,omega,p,npages=1) : 
 
     """
 
@@ -383,14 +394,15 @@ def plot_horseshoes(x,y,t,omega,p,npages=8) :
 
     pp = PdfPages('horseshoe_orbit_plots.pdf')
 
-    nrow = 4
-    ncol = 4
+    nrow = 3
+    ncol = 2
     perpage = nrow*ncol
     nmax = len(x)
     
     ntot = npages*perpage
 
-    inds = np.arange(0,nmax,ntot)
+#
+    inds = np.arange(0,nmax)
     #inds = np.random.rand(ntot)*len(x)
 
     sp_amp, sp_time, ft,fqs,gauss = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz',
@@ -686,3 +698,18 @@ def spiral_amps() :
     
 
     plt.legend([l1,l2,l3], ['$\Omega_p = 15-25$','$\Omega_p = 40-50$', '$\Omega_p = 65-75$'], loc='upper left')
+
+
+def toomre_q_fig(): 
+    
+    s1 = pynbody.load('2/12M_hr.00200')
+    s2 = pynbody.load('5/12M_hr.00500')
+    s3 = pynbody.load('8/12M_hr.00800')
+    s4 = pynbody.load('10/12M_hr.01000')
+
+    ss = [s1,s2,s3,s4]
+
+    for s in ss :
+        pynbody.analysis.angmom.faceon(s)
+    
+    
