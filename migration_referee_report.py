@@ -9,7 +9,7 @@ from pynbody.array import SimArray
 import numpy as np
 import matplotlib.pylab as plt
 from scipy.stats import gaussian_kde as kde
-
+from parallel_util import interruptible, run_parallel
 
 def first() : 
     figs = []
@@ -194,7 +194,7 @@ def horseshoe_orbits (processors=4) :
     cr_jz = SimArray(interpol.interp1d(p1['rbins'], p1['j_circ'])(cr_r),p1['j_circ'].units)
     cr_e  = SimArray(interpol.interp1d(p1['rbins'], p1['E_circ'])(cr_r),p1['E_circ'].units)
    
-    flist = glob.glob('/home/itp/roskar/isolated_runs/12M_hr/6/*.00???.gz')
+    flist = glob.glob('/home/itp/roskar/isolated_runs/12M_hr/[1-9]/*.00???.gz')
 #    flist += glob.glob('/home/itp/roskar/isolated_runs/12M_hr/7/*.00???.gz')
     flist.sort()
 
@@ -223,9 +223,9 @@ def horseshoe_orbits (processors=4) :
     spec_inds.sort()
 
  #   pinds = simple.where(s1.s)[0]
-    pinds = one.where(s1.s)[0]
+#    pinds = one.where(s1.s)[0] # used for the horseshoe figures
     #pinds = three.where(s1.s)[0]
-    #pinds = spec_inds
+    pinds = spec_inds
     cr_in_jz = cr_jz[1] - 100
     cr_out_jz = cr_jz[1] + 100
     cr_in_e = interpol.interp1d(p1['j_circ'],p1['E_circ'])(cr_in_jz)
@@ -278,8 +278,11 @@ def horseshoe_orbits (processors=4) :
 def plot_horseshoes_wavelet(x,y,t,p,omega,npages=2) : 
     from matplotlib.collections import LineCollection
     from matplotlib.backends.backend_pdf import PdfPages
+    
     import spiral_structure as ss
     import orbits
+
+    plt.rc('font', size=15)
 
     pp = PdfPages('horseshoe_orbit_plots.pdf')
 
@@ -294,7 +297,7 @@ def plot_horseshoes_wavelet(x,y,t,p,omega,npages=2) :
     
     #inds = np.random.rand(ntot)*len(x)
 
-    sp_amp, sp_time, ft,fqs,gauss = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0,9.0,omega-5,omega+5,get_crs(p,omega)[0], window=True)
+    sp_amp, sp_time, ft,fqs,gauss = ss.get_fulldisk_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0,9.0,omega-5,omega+5, window=True)
     sp_ind = np.where((sp_time >= t[0]) & (sp_time <= t[-1]))[0]
     sp_amp = sp_amp[sp_ind]
     sp_amp = np.abs(sp_amp)
@@ -328,7 +331,7 @@ def plot_horseshoes_wavelet(x,y,t,p,omega,npages=2) :
                 plt.annotate(str(j+1), (-8,8), fontsize=12)
 
             else  :
-                ax = plt.axes([0.60,0.095,0.24,0.22])
+                ax = plt.axes([0.60,0.095,0.3,0.18])
                 points = np.array([sp_time,sp_amp]).T.reshape(-1,1,2)
                 plt.ylim(sp_amp.min(), sp_amp.max())
 
@@ -679,37 +682,229 @@ def plot_kd(s1,s2,patspeed,filt=None) :
 
 def spiral_amps() : 
     import spiral_structure as ss
-
-    sa1,st1,ft,fqs,w = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0, 9.0, 15, 25, 11.5,window=True)
-    sa2,st2,ft,fqs,w = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0, 9.0, 40, 50, 5.5,window=True)
-    sa3,st3,ft,fqs,w = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0, 9.0, 65, 75, 4,window=True)
+    plt.figure()
+    sa1,st1,ft,fqs,w = ss.get_fulldisk_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier_fulldisk.npz', 2.0, 9.0, 15, 25)#, 11.5,window=True)
+    sa2,st2,ft,fqs,w = ss.get_fulldisk_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier_fulldisk.npz', 2.0, 9.0, 40, 50)#, 5.5,window=True)
+    sa3,st3,ft,fqs,w = ss.get_fulldisk_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier_fulldisk.npz', 2.0, 9.0, 65, 75)#, 4,window=True)
 
     ax = plt.subplot(111)
     l1 = plt.plot(st1,abs(sa1[0:len(st1)]),'r', linewidth=2)
     plt.ylabel('$A_2$',fontsize=20,fontweight='bold')
     plt.xlabel('$t/Gyr$', fontsize=20,fontweight='bold')
-    axt = ax.twinx()
+#    axt = ax.twinx()
     l2 = plt.plot(st2,abs(sa2[0:len(st2)]),'g', linewidth=2)
     l3 = plt.plot(st3,abs(sa3[0:len(st3)]),'b', linewidth=2)
-
+    
     plt.xlim(5,8)
-
+    #plt.ylim(0,.004)
     plt.ylabel('$A_2$',fontsize=20,fontweight='bold')
     
 
     plt.legend([l1,l2,l3], ['$\Omega_p = 15-25$','$\Omega_p = 40-50$', '$\Omega_p = 65-75$'], loc='upper left')
 
 
+def plot_horseshoes_wavelet_small(x,y,t,p,omega1,omega2):
+
+    from matplotlib.collections import LineCollection
+    from matplotlib.backends.backend_pdf import PdfPages
+    import spiral_structure as ss
+    import orbits
+
+    plt.rc('font', size=15)
+    fig = plt.figure(figsize=(13.5,11))
+    
+    #set up spiral amps
+    sp_amp1, sp_time1, ft1,fqs1,gauss1 = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 4.0,7.0,omega1-5,omega1+5, get_crs(p,omega1)[0],window=True)
+    sp_ind1 = np.where((sp_time1 >= t[0]) & (sp_time1 <= t[-1]))[0]
+    sp_amp1 = sp_amp1[sp_ind1]
+    sp_amp1 = np.abs(sp_amp1)
+    sp_time1 = sp_time1[sp_ind1]
+
+    sp_amp2, sp_time2, ft2,fqs2,gauss2 = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 4.0,7.0,omega2-5,omega2+5, get_crs(p,omega2)[0],window=True)
+    sp_ind2 = np.where((sp_time2 >= t[0]) & (sp_time2 <= t[-2]))[0]
+    sp_amp2 = sp_amp2[sp_ind2]
+    sp_amp2 = np.abs(sp_amp2)
+    sp_time2 = sp_time2[sp_ind2]
+
+
+    dt = t - t[0]
+    xr1 = x*np.cos(-omega1*dt) - y*np.sin(-omega1*dt)
+    yr1 = x*np.sin(-omega1*dt) + y*np.cos(-omega1*dt)
+    xr2 = x*np.cos(-omega2*dt) - y*np.sin(-omega2*dt)
+    yr2 = x*np.sin(-omega2*dt) + y*np.cos(-omega2*dt)
+    r = np.sqrt(x**2 + y**2)
+        
+    for j in range(2) : 
+        ax = plt.subplot(3,3,j*3+1)
+        pind = j
+        points = np.array([xr1[pind], yr1[pind]]).T.reshape(-1, 1, 2)
+        plt.xlim(-10,10)
+        plt.ylim(-10,10)
+        ax.set_aspect('equal')
+        plt.xlabel('$x~\\mathrm{[kpc]}$')
+        plt.ylabel('$y~\\mathrm{[kpc]}$')
+       
+
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+        lc = LineCollection(segments, cmap=plt.get_cmap('jet'),
+                            norm=plt.Normalize(sp_amp1.min(), sp_amp1.max()))
+        lc.set_array(sp_amp1)
+
+        ax.add_collection(lc)
+
+        ax = plt.subplot(3,3,j*3+2)
+        points = np.array([xr2[pind], yr2[pind]]).T.reshape(-1, 1, 2)
+        plt.xlim(-10,10)
+        plt.ylim(-10,10)
+        ax.set_aspect('equal')
+        plt.xlabel('$x~\\mathrm{[kpc]}$')
+        plt.ylabel('$y~\\mathrm{[kpc]}$')
+        
+
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+        lc = LineCollection(segments, cmap=plt.get_cmap('jet'),
+                            norm=plt.Normalize(sp_amp2.min(), sp_amp2.max()))
+        lc.set_array(sp_amp2)
+
+        ax.add_collection(lc)
+
+        ax = plt.subplot(3,3,j*3+3)
+        cf = orbits.orbit_cwt(x[pind],y[pind],t,ax=ax,plot_ridges=False)
+        ax.set_aspect('equal')
+        ax2 = ax.twinx()
+        ax2.plot(t,r[pind],'k',linewidth=2)
+        ax.set_xlim(t.min(),t.max())
+        ax2.set_ylim(0,10)
+        ax.set_ylabel('$\\mathrm{scale}$')
+        ax.set_xlabel('$t~\\mathrm{[Gyr]}$')
+        ax2.set_ylabel('$R\\mathrm{ [kpc]}$')
+        
+
+    ax = plt.subplot(3,3,7, aspect='auto')
+    points = np.array([sp_time1,sp_amp1]).T.reshape(-1,1,2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    lc = LineCollection(segments, cmap=plt.get_cmap('jet'),
+                        norm=plt.Normalize(sp_amp1.min(), sp_amp1.max()))
+    lc.set_array(sp_amp1)
+
+    ax.add_collection(lc)
+
+    plt.ylim(sp_amp1.min(), sp_amp1.max())
+    plt.xlabel('$t~\\mathrm{[Gyr]}$')
+    plt.ylabel('$A_2$')
+    plt.xlim(sp_time1[0],sp_time1[-1])
+    plt.ylim(sp_amp1.min(),sp_amp1.max())
+    plt.annotate('spiral amplitude', (6.1,0.04), fontsize=15)
+
+    ax = plt.subplot(3,3,8,aspect='auto')
+    points = np.array([sp_time2,sp_amp2]).T.reshape(-1,1,2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    lc = LineCollection(segments, cmap=plt.get_cmap('jet'),
+                        norm=plt.Normalize(sp_amp2.min(), sp_amp2.max()))
+    lc.set_array(sp_amp2)
+
+    ax.add_collection(lc)
+    plt.ylim(sp_amp2.min(), sp_amp2.max())
+    plt.xlabel('$t~\\mathrm{[Gyr]}$')
+    plt.ylabel('$A_2$')
+    plt.xlim(sp_time2[0],sp_time2[-1])
+    plt.ylim(sp_amp2.min(),sp_amp2.max())
+    plt.annotate('spiral amplitude', (6.1,0.04), fontsize=15)
+
+    plt.subplots_adjust(hspace=.3,wspace=.3)
+
+def make_redist_plots(x,y,t) : 
+
+    from matplotlib.collections import LineCollection
+    from matplotlib.backends.backend_pdf import PdfPages
+    import spiral_structure as ss
+    import orbits
+
+    plt.rc('font', size=15)
+    fig = plt.figure(figsize=(13.5,11))
+    r = np.sqrt(x**2 + y**2)
+    for j in range(len(x)) : 
+        ax = plt.subplot(3,4,j*2+1,frameon=False)
+        pind = j
+       # good = np.where(r[pind] > 0)[0]
+        points = np.array([x[pind], y[pind]]).T.reshape(-1, 1, 2)
+        plt.xlim(-13,13)
+        plt.ylim(-13,13)
+        ax.set_aspect('equal')
+#        plt.xlabel('$x~\\mathrm{[kpc]}$')
+#        plt.ylabel('$y~\\mathrm{[kpc]}$')
+       
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+        lc = LineCollection(segments, cmap=plt.get_cmap('jet'),
+                            norm=plt.Normalize(t.min(), t.max()))
+        lc.set_array(t)
+
+        ax.add_collection(lc)
+
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
+
+        ax = plt.subplot(3,4,j*2+2)
+        points = np.array([t, r[pind]]).T.reshape(-1, 1, 2)
+        plt.xlim(0,10)
+        plt.ylim(0,13)
+        plt.xlabel('$t~\\mathrm{[Gyr]}$')
+        plt.ylabel('$R~\\mathrm{[kpc]}$')
+        
+
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+        lc = LineCollection(segments, cmap=plt.get_cmap('jet'),
+                            norm=plt.Normalize(t.min(), t.max()))
+        lc.set_array(t)
+
+        ax.add_collection(lc)
+
 def toomre_q_fig(): 
-    
-    s1 = pynbody.load('2/12M_hr.00200')
-    s2 = pynbody.load('5/12M_hr.00500')
-    s3 = pynbody.load('8/12M_hr.00800')
-    s4 = pynbody.load('10/12M_hr.01000')
+    from matplotlib.font_manager import FontProperties
 
-    ss = [s1,s2,s3,s4]
+    flist = ['2/12M_hr.00200', '5/12M_hr.00500', '8/12M_hr.00800', 
+             '10/12M_hr.01000']
 
-    for s in ss :
+    labels = ['2 Gyr', '5 Gyr', '8 Gyr', '10 Gyr']
+    lines = ['-','--','-.',':']
+    plt.figure(figsize=(8,12))
+    ps = []
+    for i,f in enumerate(flist) :
+        s = pynbody.load(f)
         pynbody.analysis.angmom.faceon(s)
+        ps.append(pynbody.analysis.profile.Profile(s.s,max=10))
     
+    ax = plt.subplot(2,1,1)
+
+    for i,p in enumerate(ps) :
+        plt.plot(p['rbins'],p['Q'],'k'+lines[i],label=labels[i])
+
+        if i == len(flist)-1:
+            ax.set_ylabel('$Q$')
+            ax.set_ylim(0,10)
+            ax.xaxis.set_ticklabels("")
+    plt.legend(loc='upper left',prop=FontProperties(size='small'))
+
+    ax = plt.subplot(2,1,2)
+    ax2 = ax.twinx()
     
+    for i,p in enumerate(ps) :
+        ax.plot(p['rbins'],p['density'].in_units('Msol kpc^-2'),'k'+lines[i])
+        ax2.plot(p['rbins'],p['vr_disp'],'r'+lines[i])
+
+        if i == len(flist)-1:
+            ax.set_ylabel('$\Sigma_{\star}$ [M$_{\odot}$ kpc$^{-2}$]')
+            ax.set_xlabel('$R$ [kpc]')
+            ax.semilogy()
+            ax2.set_ylabel('$\sigma_{r}$ [km/s]')
+
+
+@interruptible
+def load_single_file(filename):
+     return pynbody.load(filename[0])

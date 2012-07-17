@@ -8,63 +8,6 @@ import isolated as iso
 import numpy as np
 import matplotlib.pylab as plt
 
-def get_zrms_grid(s) : 
-
-    s.s['dr'] = s.s['rxy']-s.s['rform']
-
-    hist, xs, ys = pynbody.plot.generic.hist2d(s.s['dr'],s.s['age'],mass=s.s['mass'],
-                                               make_plot=False,gridsize=(20,20))
-
-    dx = xs[1] - xs[0]
-    dy = ys[1] - ys[0]
-
-    zrms = np.zeros((len(xs),len(ys)))
-    zrms_i = np.zeros((len(xs),len(ys)))
-    for i,x in enumerate(xs) : 
-        for j,y in enumerate(ys) : 
-            ind = np.where((s.s['dr'] > x - dx/2) & (s.s['dr'] < x + dx/2) & 
-                           (s.s['age'] > y - dy/2) & (s.s['age'] < y + dy/2))[0]
-            
-            print i,j,len(ind)
-            if len(ind) > 100 : 
-                
-                zrms[j,i] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
-                zrms_i[j,i] = np.sqrt((s.s['zform'][ind]**2).sum()/len(ind))
-            
-            else : 
-                zrms[j,i] = -500
-    return hist, zrms, zrms_i, xs, ys
-
-def get_vdisp_grid(s,varx,vary) : 
-
-    s.s['dr'] = s.s['rxy']-s.s['rform']
-
-    hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
-                                               make_plot=False,gridsize=(20,20))
-
-    dx = xs[1] - xs[0]
-    dy = ys[1] - ys[0]
-
-    vdisp_r = np.zeros((len(xs),len(ys)))
-    vdisp_z = np.zeros((len(xs),len(ys)))
-
-    vdisp_r_i = np.zeros((len(xs),len(ys)))
-    vdisp_z_i = np.zeros((len(xs),len(ys)))
-
-    for i,x in enumerate(xs) : 
-        for j,y in enumerate(ys) : 
-            ind = np.where((s.s['dr'] > x - dx/2) & (s.s['dr'] < x + dx/2) & 
-                           (s.s['age'] > y - dy/2) & (s.s['age'] < y + dy/2))[0]
-            
-            print i,j,len(ind)
-            if len(ind) > 100 : 
-                
-                vdisp_r[j,i] = np.std(s.s['vr'][ind])
-                vdisp_z[j,i] = np.std(s.s['vz'][ind])
-                vdisp_z_i[j,i] = np.std(s.s['vzform'][ind])
-
-    return hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys
-
 def zrms_deltar(s) : 
     
     pynbody.analysis.angmom.faceon(s)
@@ -73,7 +16,7 @@ def zrms_deltar(s) :
         iso.get_rform(s.s)
     
     mindr = pynbody.filt.BandPass('dr', 1,10)
-    hist, zrms, zrms_i, xs, ys = get_zrms_grid(s.s[mindr])
+    hist, zrms, zrms_i, xs, ys = iso.get_zrms_grid(s.s[mindr])
 
     plt.figure()
     plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
@@ -94,7 +37,7 @@ def vdisp_deltar(s) :
     
     mindr = pynbody.filt.BandPass('dr', 1,10)
 
-    hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys = get_vdisp_grid(s.s[mindr],'dr','age')
+    hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys = iso.get_vdisp_grid(s.s[mindr],'dr','age')
 
     fig = plt.figure(figsize=(10,5))
 
@@ -132,8 +75,8 @@ def zrms_deltar_rform(s):
     for i,rlims in enumerate([[2,4],[4,6],[6,8],[8,10]]) : 
         
         rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
-
-        hist, zrms, zrms_i, xs, ys = get_zrms_grid(s.s[rfilt])
+        drfilt = pynbody.filt.LowPass('dr', 10)
+        hist, zrms, zrms_i, xs, ys = iso.get_zrms_grid(s.s[rfilt&drfilt])
         
         ax = fig.add_subplot(2,2,i+1)
 
@@ -150,6 +93,38 @@ def zrms_deltar_rform(s):
         
         plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]))
 
+def hz_deltar_rform(s):
+    
+    fig = plt.figure(figsize=(15,15))
+    
+    pynbody.analysis.angmom.faceon(s)
+
+    if 'rform' not in s.s.keys():
+        iso.get_rform(s.s)
+        s.s['dr'] = s.s['rxy'] - s.s['rform']
+    
+    for i,rlims in enumerate([[2,4],[4,6],[6,8],[8,10]]) : 
+        
+        rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
+        drfilt = pynbody.filt.LowPass('dr', 10)
+        hist, hz, rho0, xs, ys = iso.get_hz_grid(s.s[rfilt&drfilt])
+        
+        ax = fig.add_subplot(2,2,i+1)
+
+        plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
+
+        im = plt.imshow(hz,origin='lower',
+                        extent=(min(xs), max(xs), min(ys), max(ys)),
+                        aspect='auto',vmin=0,vmax=1.2,interpolation='nearest')
+        
+        cb = plt.colorbar(im)
+        cb.set_label('$h_z [kpc]$',fontsize='smaller')
+        
+        plt.xlabel('$\Delta R$ [kpc]',fontsize='smaller')
+        plt.ylabel('Age [Gyr]',fontsize='smaller')
+        
+        plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small')
+
 def zrms_deltar_rfinal(s):
     
     fig = plt.figure(figsize=(15,15))
@@ -162,8 +137,8 @@ def zrms_deltar_rfinal(s):
     for i,rlims in enumerate([[2,4],[4,6],[6,8],[8,10]]) : 
         
         rfilt = pynbody.filt.BandPass('rxy',rlims[0],rlims[1])
-
-        hist, zrms, zrms_i, xs, ys = get_zrms_grid(s.s[rfilt])
+        drfilt = pynbody.filt.LowPass('dr', 10)
+        hist, zrms, zrms_i, xs, ys = iso.get_zrms_grid(s.s[rfilt&drfilt])
         
         ax = fig.add_subplot(2,2,i+1)
 
@@ -192,8 +167,8 @@ def vdisp_deltar_rform(s):
     for i,rlims in enumerate([[2,4],[4,6],[6,8],[8,10]]) : 
         
         rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
-       # mindr = pynbody.filt.BandPass('dr', 1,10)
-        hist, vdisp_r, vdisp_z, xs, ys = get_vdisp_grid(s.s[rfilt])
+        drfilt = pynbody.filt.LowPass('dr', 10)
+        hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys = iso.get_vdisp_grid(s.s[rfilt&drfilt],'dr','age')
         
         ax = fig.add_subplot(2,2,i+1)
 
@@ -203,12 +178,12 @@ def vdisp_deltar_rform(s):
                         aspect='auto',interpolation='nearest',vmin=0,vmax=70)
         
         cb = plt.colorbar(im)
-        cb.set_label('$\sigma_z$ [km/s]')
+        cb.set_label('$\sigma_z$ [km/s]', fontsize='smaller')
         
-        plt.xlabel('$\Delta R$ [kpc]')
-        plt.ylabel('Age [Gyr]')
+        plt.xlabel('$\Delta R$ [kpc]',fontsize='smaller')
+        plt.ylabel('Age [Gyr]',fontsize='smaller')
         
-        plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]))
+        plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]),fontsize='small')
 
 
 def vdisp_deltar_rfinal(s):
@@ -224,13 +199,17 @@ def vdisp_deltar_rfinal(s):
         
         rfilt = pynbody.filt.BandPass('rxy',rlims[0],rlims[1])
        # mindr = pynbody.filt.BandPass('dr', 1,10)
-        hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys = get_vdisp_grid(s.s[rfilt],'dr','age')
+        hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys = iso.get_vdisp_grid(s.s[rfilt],'dr','age')
         
         ax = fig.add_subplot(2,2,i+1)
 
         plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
 
-        im = plt.imshow(vdisp_z-vdisp_z_i,origin='lower',extent=(min(xs),max(xs),min(ys),max(ys)),
+        im = plt.imshow(vdisp_z-vdisp_z_i,origin='lower',
+                        extent=(min(xs)-np.diff(xs)[0],
+                                max(xs)+np.diff(xs)[0],
+                                min(ys)-np.diff(ys)[0],
+                                max(ys)+np.diff(ys)[0]),
                         aspect='auto',interpolation='nearest')
         
         cb = plt.colorbar(im)
@@ -240,3 +219,5 @@ def vdisp_deltar_rfinal(s):
         plt.ylabel('Age [Gyr]')
         
         plt.title('$%d < R_{final} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]))
+
+

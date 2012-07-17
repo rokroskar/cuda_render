@@ -287,48 +287,11 @@ def one_d_kde(x, weights=None, range=None, gridsize=100):
 
     return kern_nx, inv_cov, xx
 
-##################################
-# fitting functions
-#
-def two_expo(x,p) : 
-    return p[0]*np.exp(-x/p[1]) + p[2]*np.exp(-x/p[3])
-
-def two_sech2(x,p) : 
-    return p[0]*sech(-x/p[1])**2 + p[2]*sech(-x/p[3])**2
-
-def sech(x) : 
-    return 1/np.cosh(x)
-
-def expo(x,p) : 
-    return p[0]*np.exp(-x/p[1])
-
-###################################
-
-def overplot_fit(p,func) : 
-    x = np.linspace(0,p[1]*5,100)
-    plt.plot(x,func(x,p), '--')
-
-def fit_profile(prof,func,p0,units,xmin=0,xmax=10) : 
-    from scipy import optimize 
-
-    fitfunc = lambda p, x : func(x,p)
-    errfunc = lambda p, x, y, err : (y-fitfunc(p,x))/err
-
-    ind = np.where((prof['rbins'] > xmin)&(prof['rbins'] <= xmax))[0]
-
-    r = np.array(prof['rbins'])[ind]
-    den = np.array(prof['density'].in_units(units)[ind])
-    err = den/np.sqrt(prof['n'][ind])
-
-    p1, res = optimize.leastsq(errfunc, p0, args = (r,den,err))
-
-    red_chisq = sum((den - func(r,p1))**2/err**2)/(len(r)-len(p1)-1)
-
-    return p1, red_chisq
 
 @interruptible
 def single_profile_fits(x) : 
     from pynbody.analysis.profile import Profile, VerticalProfile
+    from fitting import fit_profile, two_sech2
 
     filename, merger = x
 
@@ -385,3 +348,115 @@ def plot_profile_fit(filename, merger, rmin=3, rmax=6) :
     overplot_fit(fit,expo)
     print fit, chsq
     plt.semilogy()
+
+def get_zrms_grid(s,varx,vary) :
+    """
+    Produces z_rms values on a grid specified by varx and vary
+
+    """
+
+    s.s['dr'] = s.s['rxy']-s.s['rform']
+
+    hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
+                                               make_plot=False,gridsize=(20,20))
+
+    dx = xs[1] - xs[0]
+    dy = ys[1] - ys[0]
+
+    zrms = np.zeros((len(xs),len(ys)))
+    zrms_i = np.zeros((len(xs),len(ys)))
+    for i,x in enumerate(xs) : 
+        for j,y in enumerate(ys) : 
+            ind = np.where((s.s[varx] > x - dx/2) & (s.s[varx] < x + dx/2) & 
+                           (s.s[vary] > y - dy/2) & (s.s[vary] < y + dy/2))[0]
+            
+            print i,j,len(ind)
+            if len(ind) > 100 : 
+                
+                zrms[j,i] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
+                zrms_i[j,i] = np.sqrt((s.s['zform'][ind]**2).sum()/len(ind))
+            
+            else : 
+                zrms[j,i] = -500
+    return hist, zrms, zrms_i, xs, ys
+
+def get_hz_grid(s,varx, vary, plots=False, x_range = None, y_range = None) : 
+    from fitting import fit_profile, sech, expo, overplot_fit
+    from matplotlib.backends.backend_pdf import PdfPages
+    from pynbody.analysis.profile import VerticalProfile
+
+    hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
+                                               make_plot=False,gridsize=(10,10))
+
+    dx = xs[1] - xs[0]
+    dy = ys[1] - ys[0]
+
+    print  dx, dy
+
+    hz = np.zeros((len(xs),len(ys)))
+    rho0 = np.zeros((len(xs),len(ys)))
+
+    if plots:
+        pp = PdfPages('vertical_fits.pdf')
+        f = plt.figure()
+
+    for i,x in enumerate(xs) : 
+        for j,y in enumerate(ys) : 
+            ind = np.where((s.s[varx] > x - dx/2) & (s.s[varx] < x + dx/2) & 
+                           (s.s[vary] > y - dy/2) & (s.s[vary] < y + dy/2))[0]
+            
+            print i,j,len(ind)
+            if len(ind) > 200 : 
+                prof = VerticalProfile(s.s[ind], 0,15,3.0,nbins=10)
+
+                fit, chisq =  fit_profile(prof, expo,[1,.2], 'Msol pc^-3', 0, 3)
+
+                hz[j,i] = fit[1]
+                rho0[j,i] = fit[0]
+            
+                if plots: 
+                    plt.plot(prof['rbins'], prof['density'].in_units('Msol pc^-3'))
+                    plt.semilogy()
+                    plt.annotate('%f, %f'%(x,y), (0.5,0.5), xycoords='figure fraction')
+                    overplot_fit(fit,expo)
+                    pp.savefig()
+                    plt.clf()
+            else : 
+                hz[j,i] = -500
+                rho0[j,i] = -500
+
+    if plots: 
+        pp.close()
+            
+    return hist, hz, rho0, xs, ys
+
+
+def get_vdisp_grid(s,varx,vary) : 
+
+    s.s['dr'] = s.s['rxy']-s.s['rform']
+
+    hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
+                                               make_plot=False,gridsize=(10,10))
+
+    dx = xs[1] - xs[0]
+    dy = ys[1] - ys[0]
+
+    vdisp_r = np.zeros((len(xs),len(ys)))
+    vdisp_z = np.zeros((len(xs),len(ys)))
+
+    vdisp_r_i = np.zeros((len(xs),len(ys)))
+    vdisp_z_i = np.zeros((len(xs),len(ys)))
+
+    for i,x in enumerate(xs) : 
+        for j,y in enumerate(ys) : 
+            ind = np.where((s.s[varx] > x - dx/2) & (s.s[varx] < x + dx/2) & 
+                           (s.s[vary] > y - dy/2) & (s.s[vary] < y + dy/2))[0]
+            
+            print i,j,len(ind)
+            if len(ind) > 100 : 
+                
+                vdisp_r[j,i] = np.std(s.s['vr'][ind])
+                vdisp_z[j,i] = np.std(s.s['vz'][ind])
+                vdisp_z_i[j,i] = np.std(s.s['vzform'][ind])
+
+    return hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys

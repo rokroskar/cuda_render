@@ -42,12 +42,22 @@ def single_file_pos(file, pinds, family) :
         elif family == 'dark' :
             subs = s.d
 
-        pos = subs[pinds]['pos']
-        vel = subs[pinds]['vel']
+        if (np.array(pinds).max() < len(subs)) : 
+            pos = subs[pinds]['pos']
+            vel = subs[pinds]['vel']
+        else : 
+            pos = np.zeros((len(pinds),3))
+            vel = np.zeros((len(pinds),3))
         mass = subs[pinds]['mass']
         #metals = subs[pinds]['metals']
 
-        return np.array(pos), np.array(vel), np.array(mass), s.properties['a']
+            good = np.where(pinds < len(subs))[0]
+            if len(good) > 0:
+                pos[good] = subs[pinds[good]]['pos']
+                vel[good] = subs[pinds[good]]['vel']
+
+        return np.array(pos), np.array(vel), s.properties['a']
+
     except KeyboardInterrupt: 
         raise KeyboardInterruptError()
 

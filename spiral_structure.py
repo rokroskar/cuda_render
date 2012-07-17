@@ -104,7 +104,7 @@ def fourier_sequence_parallel(parent_dir='./', file_pattern = '/[1-9]/*.00???', 
             mass[i] = res[i][2]
             times[i] = res[i][3]
 
-        np.savez(parent_dir+"/complete_fourier", c = c_array, t = times, r = bins, nbins = nbins, max = max, min = min,
+        np.savez(parent_dir+"/complete_fourier_fulldisk", c = c_array, t = times, r = bins, nbins = nbins, max = max, min = min,
                  file_pattern = file_pattern, cutoff_age = cutoff_age, mass = mass)
         
         return c_array, times, bins, res
@@ -229,15 +229,27 @@ def get_full_disk_fft(fourier_data, t1, t2, m=2) :
     x = np.arange(len(ind))
     gauss = 1.0*np.exp(-(x-nfft/2.0)**2/(nfft/4.0)**2)
 
+    win = gauss
+
     ft = np.fft.fft(data['c'][ind,m,0]*gauss, n=nfft)
-    
-    for k in range(1,nfft/2) :
-        pwr[k] = (abs(ft[k])**2 + abs(ft[-k])**2)/(nfft*gauss.sum()**2)
-
-        
     fqs = np.fft.fftfreq(nfft,data['t'][1]-data['t'][0])*2.0*np.pi/m
+    
+    #for k in range(1,nfft/2) :
+    #    pwr[k] = (abs(ft[k])**2 + abs(ft[-k])**2)/(nfft*gauss.sum()**2)
+    
+    # compute window normalization
+    win_norm = len(ft)*np.sum(win**2)
 
-    return pwr, fqs
+    # compute the power spectrum
+
+    psp = np.zeros(len(ft)/2)
+    
+    psp[0] = 1./win_norm*np.abs(ft[0])**2
+    psp[-1] = 1./win_norm*np.abs(ft[len(ft)/2-1])**2
+    for i in np.arange(1,len(ft)/2-1) : 
+        psp[i] = 1./win_norm*(np.abs(ft[i])**2 + np.abs(ft[-i])**2)
+
+    return ft, fqs, psp
 
 def get_band_amplitude(fourier_data, t1, t2, f1, f2, r, m=2, window=True) :
     from scipy import signal
@@ -254,6 +266,20 @@ def get_band_amplitude(fourier_data, t1, t2, f1, f2, r, m=2, window=True) :
 
     return np.fft.ifft(ft*win), t[np.digitize([t1],t)-1:np.digitize([t1],t)-1+len(ft)], ft, fqs, win
 
+def get_fulldisk_band_amplitude(fourier_data,t1,t2,f1,f2,m=2,window=True):
+    from scipy import signal
+
+    ft, fqs, pwr = get_full_disk_fft(fourier_data,t1,t2)
+    
+    # make a bandpass filter
+    ind = np.where((fqs>=f1)&(fqs<=f2))[0]
+    
+    win = np.zeros(len(ft))
+    win[ind] = 1.0
+
+    t = np.load(fourier_data)['t']
+
+    return np.fft.ifft(ft*win), t[np.digitize([t1],t)-1:np.digitize([t1],t)-1+len(ft)], ft, fqs, win
     
 def plot_mean_A2(dir='./',rmin=0,rmax=15): 
     

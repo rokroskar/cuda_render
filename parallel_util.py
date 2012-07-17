@@ -102,3 +102,4 @@ def interruptible(func) :
         except KeyboardInterrupt: 
             raise KeyboardInterruptError()
     return newfunc
+

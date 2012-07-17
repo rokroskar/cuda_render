@@ -15,8 +15,8 @@ def make_rotating_movie(sim,nframes,x2=100, fileprefix = 'rotating', noticks = T
         im = pynbody.sph.threaded_render_image(sim.g,kernel=pynbody.sph.Kernel2D(), 
                                                x2=x2,nx=1024,ny=768, num_threads=10)
         if i == 0: 
-            if not kwargs.has_key('vmin'): kwargs['vmin'] = im.min()
-            if not kwargs.has_key('vmax'): kwargs['vmax'] = im.max()
+            if not kwargs.has_key('vmin'): kwargs['vmin'] = np.log10(im.min())
+            if not kwargs.has_key('vmax'): kwargs['vmax'] = np.log10(im.max())
 
         plt.imshow(np.log10(im), vmin=kwargs['vmin'], vmax=kwargs['vmax'], cmap=plt.cm.Blues_r)
         if noticks:

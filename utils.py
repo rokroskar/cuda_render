@@ -17,11 +17,10 @@ def make_tile_figure(nrow,ncol,func,*args,**kwargs) :
             
             func(i*ncol+j,ax,*args,**kwargs)
 
-            if (i < nrow-1) | (j > 0):
-                ax.set_xticklabels('')
-                ax.set_yticklabels('')
-                ax.set_ylabel('')
-                ax.set_xlabel('')
-
-            
+            if (i < nrow-1) | (j > 0): clear_labels(ax)            
                 
+def clear_labels(ax):
+    ax.set_xticklabels('')
+    ax.set_yticklabels('')
+    ax.set_ylabel('')
+    ax.set_xlabel('')

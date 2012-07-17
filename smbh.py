@@ -67,18 +67,19 @@ def smbh_orbits(output=False, processes = multiprocessing.cpu_count()/4):
 
     flist = glob.glob('?/*.00???')
     flist.sort()
+    print flist[0:10]
 
     s = pyn.load(flist[0])
     inds = bh_index(s.d)
 
     assert(len(inds) == 2)
 
-    pos, vel, mass, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark')
+    pos, vel, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark')
 
     dpos = np.diff(pos,axis=1).squeeze()
 
     r = pyn.array.SimArray(np.sqrt(np.sum(dpos**2,axis=1)),'kpc')
-    t = pyn.array.SimArray(t, 'Gyr').in_units('Myr')
+    t = pyn.array.SimArray(t, 's kpc km^-1').in_units('Myr')
 
 
     plt.plot(t - t[0], r)
@@ -100,7 +101,7 @@ def filelist() :
 
     for f in flist : 
         stemp = pyn.load(f,only_header=True)
-        print>>sys.stderr, f, stemp.properties['time'].in_units('s kpc km^-1')
+        print>>sys.stderr, f, stemp.properties['time'].in_units('Myr')
 
 
 def central_gas(path, radius=0.5, fig = None) :
