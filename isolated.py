@@ -23,6 +23,7 @@ import scipy as sp
 import parallel_util
 from parallel_util import interruptible, run_parallel
 import matplotlib.pylab as plt 
+import diskfitting
 
 #try: 
 #    from IPython.parallel import Client
@@ -92,6 +93,23 @@ def get_rform(sim) :
     sim['rform'] = np.sqrt(np.sum(sim['posform'][:,0:2]**2,axis=1))
 
 
+def get_jzmax(s) : 
+    """
+    Calculate the maximum angular momentum given the star's energy
+    """
+#    from scipy.interpolate import interp1d
+    from scipy import interp
+
+    disk = pynbody.filt.Disc('50 kpc', '500 pc')
+
+    prof = pynbody.analysis.profile.Profile(s, nbins = 100, type = 'log', min = 0.01, max = 100)
+    
+#    jzmax_interp = interp1d(prof['E_circ'], prof['j_circ'])
+
+    s.s['jzmax'] = interp(s.s['te'], prof['E_circ'], prof['j_circ'])
+    
+    
+    
 def get_cofm(dir='./', filepattern='*/*.0????') : 
     """
 
@@ -349,7 +367,7 @@ def plot_profile_fit(filename, merger, rmin=3, rmax=6) :
     print fit, chsq
     plt.semilogy()
 
-def get_zrms_grid(s,varx,vary) :
+def get_zrms_grid(s,varx,vary,rmin,rmax,zmin,zmax) :
     """
     Produces z_rms values on a grid specified by varx and vary
 
@@ -380,13 +398,13 @@ def get_zrms_grid(s,varx,vary) :
                 zrms[j,i] = -500
     return hist, zrms, zrms_i, xs, ys
 
-def get_hz_grid(s,varx, vary, plots=False, x_range = None, y_range = None) : 
-    from fitting import fit_profile, sech, expo, overplot_fit
+def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False):
+    from fitting import fit_profile, sech2, expo, overplot_fit
     from matplotlib.backends.backend_pdf import PdfPages
     from pynbody.analysis.profile import VerticalProfile
 
     hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
-                                               make_plot=False,gridsize=(10,10))
+                                               make_plot=False,gridsize=gridsize)
 
     dx = xs[1] - xs[0]
     dy = ys[1] - ys[0]
@@ -394,7 +412,10 @@ def get_hz_grid(s,varx, vary, plots=False, x_range = None, y_range = None) :
     print  dx, dy
 
     hz = np.zeros((len(xs),len(ys)))
-    rho0 = np.zeros((len(xs),len(ys)))
+    hr = np.zeros((len(xs),len(ys)))
+    hzerr = np.zeros((len(xs),len(ys)))
+    hrerr = np.zeros((len(xs),len(ys)))
+#    rho0 = np.zeros((len(xs),len(ys)))
 
     if plots:
         pp = PdfPages('vertical_fits.pdf')
@@ -406,13 +427,23 @@ def get_hz_grid(s,varx, vary, plots=False, x_range = None, y_range = None) :
                            (s.s[vary] > y - dy/2) & (s.s[vary] < y + dy/2))[0]
             
             print i,j,len(ind)
-            if len(ind) > 200 : 
-                prof = VerticalProfile(s.s[ind], 0,15,3.0,nbins=10)
+            if len(ind) > 100 : 
+                prof = VerticalProfile(s.s[ind], 0,20,3.0,nbins=10)
 
-                fit, chisq =  fit_profile(prof, expo,[1,.2], 'Msol pc^-3', 0, 3)
+                #fit, chisq =  fit_profile(prof, sech2,[prof['density'].in_units('Msol pc^-3')[0],.2], 
+                 #                         'Msol pc^-3', 0, 3)
 
-                hz[j,i] = fit[1]
-                rho0[j,i] = fit[0]
+                hr0, hz0, fitnum = diskfitting.two_exp_fit(s.s[ind],rmin=rmin,rmax=rmax,zmin=zmin,zmax=zmax)
+                #hrerr0, hzerr0 = diskfitting.mcerrors(s.s[ind],[hr,hz],rmin=rmin,
+                          #                          rmax=rmax,zmin=zmin,zmax=zmax)
+                                                         
+
+                hz[j,i] = hz0
+                hr[j,i] = hr0
+                #hzerr[j,i] = hzerr0
+                #hrerr[j,i] = hrerr0
+
+#                rho0[j,i] = fit[0]
             
                 if plots: 
                     plt.plot(prof['rbins'], prof['density'].in_units('Msol pc^-3'))
@@ -423,20 +454,20 @@ def get_hz_grid(s,varx, vary, plots=False, x_range = None, y_range = None) :
                     plt.clf()
             else : 
                 hz[j,i] = -500
-                rho0[j,i] = -500
+                
 
     if plots: 
         pp.close()
             
-    return hist, hz, rho0, xs, ys
+    return hist, hz, hr, hzerr, hrerr, xs, ys
 
 
-def get_vdisp_grid(s,varx,vary) : 
+def get_vdisp_grid(s,varx,vary,gridsize=(10,10)) : 
 
     s.s['dr'] = s.s['rxy']-s.s['rform']
 
     hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
-                                               make_plot=False,gridsize=(10,10))
+                                               make_plot=False,gridsize=gridsize)
 
     dx = xs[1] - xs[0]
     dy = ys[1] - ys[0]
