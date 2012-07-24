@@ -62,7 +62,7 @@ def quick_plots(sim):
     pyn.plot.rho_T(sim, clear = False, t_range = [1,7], rho_range = [-7,10])
 
 
-def smbh_orbits(output=False, processes = multiprocessing.cpu_count()/4):
+def smbh_orbits(output=False, processes = multiprocessing.cpu_count()/4, test=False):
     import glob, orbits
 
     flist = glob.glob('?/*.00???')
@@ -74,7 +74,7 @@ def smbh_orbits(output=False, processes = multiprocessing.cpu_count()/4):
 
     assert(len(inds) == 2)
 
-    pos, vel, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark')
+    pos, vel, mass, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark', test=test)
 
     dpos = np.diff(pos,axis=1).squeeze()
 

@@ -51,12 +51,12 @@ def single_file_pos(file, pinds, family) :
         mass = subs[pinds]['mass']
         #metals = subs[pinds]['metals']
 
-            good = np.where(pinds < len(subs))[0]
-            if len(good) > 0:
-                pos[good] = subs[pinds[good]]['pos']
-                vel[good] = subs[pinds[good]]['vel']
+        good = np.where(pinds < len(subs))[0]
+        if len(good) > 0:
+            pos[good] = subs[pinds[good]]['pos']
+            vel[good] = subs[pinds[good]]['vel']
 
-        return np.array(pos), np.array(vel), s.properties['a']
+        return np.array(pos), np.array(vel), np.array(mass), s.properties['a']
 
     except KeyboardInterrupt: 
         raise KeyboardInterruptError()
@@ -66,7 +66,6 @@ def trace_orbits(filelist, pinds) :
     pos = SimArray(np.zeros((len(filelist),len(pinds),3)))
     vel = SimArray(np.zeros((len(filelist),len(pinds),3)))
     mass = SimArry(np.zeros((len(filelist),len(pinds),1)))
-    metals = SimArry(np.zeros((len(filelist),len(pinds),1)))
     time = SimArray(np.zeros(len(filelist)))
     
     cen_size = 5
@@ -88,10 +87,10 @@ def trace_orbits(filelist, pinds) :
         vcen.units = cen['vel'].units
         s['vel']-=vcen
 
-        pos[i], vel[i], mass[i], metals[i], time[i] = \
+        pos[i], vel[i], mass[i], time[i] = \
             s.s[pinds]['pos'], s.s[pinds]['vel'], s.s[pinds]['mass'], s.s[pinds]['metals'], s.properties['a']
 
-    return pos, vel, mass, metals, time
+    return pos, vel, mass, time
     
 
 
