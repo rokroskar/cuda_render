@@ -50,15 +50,15 @@ def quick_plots(sim):
     
     pyn.analysis.halo.center(sim,ind=bh_index(sim),mode='ind')
     
-    plt.subplot(2,2,1)
+    ax = plt.subplot(2,2,1)
 
-    plot_central(sim, clear = False, units='m_p cm^-3')
-    plt.subplot(2,2,2)
-    plot_central(sim, clear = False, units='m_p cm^-2')
-    plt.subplot(2,2,3)
+    plot_central(sim, clear = False, units='m_p cm^-3', subplot=ax)
+    ax = plt.subplot(2,2,2)
+    plot_central(sim, clear = False, units='m_p cm^-2', subplot=ax)
+    ax = plt.subplot(2,2,3)
     sim.rotate_x(90)
-    plot_central(sim, clear = False, units='m_p cm^-2')    
-    plt.subplot(2,2,4)
+    plot_central(sim, clear = False, units='m_p cm^-2', subplot=ax)    
+    ax = plt.subplot(2,2,4)
     pyn.plot.rho_T(sim, clear = False, t_range = [1,7], rho_range = [-7,10])
 
 

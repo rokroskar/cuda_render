@@ -103,14 +103,20 @@ def hz_deltar_rform(s, gridsize=(10,10),vmin=0,vmax=1.2):
         iso.get_rform(s.s)
         s.s['dr'] = s.s['rxy'] - s.s['rform']
     
+    if 'jzmax' not in s.s.keys():
+        iso.get_jzmax(s)
+        
+    s.s['jz_jzmax'] = s.s['jz']/s.s['jzmax']
+
     for i,rlims in enumerate([[2,4],[4,6],[6,8],[8,10]]) : 
         
         rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
         drfilt = pynbody.filt.LowPass('dr', 10)
-        jzfilt = pynbody.filt.BandPass('jz_jzmax', .95, 1.01)
-        hist, hz, hr, hzerr, hrerr, xs, ys = iso.get_hz_grid(s.s[rfilt&drfilt&jzfilt], 'dr', 'age', 
+        jzfilt = pynbody.filt.BandPass('jz_jzmax', .9, 1.01)
+        hist, hz, hr, hzerr, hrerr, xs, ys = iso.get_hz_grid(s.s[rfilt&drfilt], 'dr', 'age', 
                                                              rmin=0,rmax=20,zmin=0,zmax=3,gridsize=gridsize)
         
+
         ax = fig.add_subplot(2,2,i+1)
 
         plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')

@@ -413,6 +413,7 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False)
 
     hz = np.zeros((len(xs),len(ys)))
     hr = np.zeros((len(xs),len(ys)))
+    num = np.zeros((len(xs), len(ys)))
     hzerr = np.zeros((len(xs),len(ys)))
     hrerr = np.zeros((len(xs),len(ys)))
 #    rho0 = np.zeros((len(xs),len(ys)))
@@ -428,20 +429,21 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False)
             
             print i,j,len(ind)
             if len(ind) > 100 : 
-                prof = VerticalProfile(s.s[ind], 0,20,3.0,nbins=10)
+#                prof = VerticalProfile(s.s[ind], 0,20,3.0,nbins=10)
 
                 #fit, chisq =  fit_profile(prof, sech2,[prof['density'].in_units('Msol pc^-3')[0],.2], 
                  #                         'Msol pc^-3', 0, 3)
 
                 hr0, hz0, fitnum = diskfitting.two_exp_fit(s.s[ind],rmin=rmin,rmax=rmax,zmin=zmin,zmax=zmax)
-                #hrerr0, hzerr0 = diskfitting.mcerrors(s.s[ind],[hr,hz],rmin=rmin,
-                          #                          rmax=rmax,zmin=zmin,zmax=zmax)
+                hrerr0, hzerr0 = diskfitting.mcerrors(s.s[ind],[hr0,hz0],rmin=rmin,
+                                                      rmax=rmax,zmin=zmin,zmax=zmax)
                                                          
 
                 hz[j,i] = hz0
                 hr[j,i] = hr0
-                #hzerr[j,i] = hzerr0
-                #hrerr[j,i] = hrerr0
+                num[j,i] = fitnum
+                hzerr[j,i] = hzerr0
+                hrerr[j,i] = hrerr0
 
 #                rho0[j,i] = fit[0]
             
@@ -459,8 +461,77 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False)
     if plots: 
         pp.close()
             
-    return hist, hz, hr, hzerr, hrerr, xs, ys
+    return hist, hz, hr, hzerr, hrerr, xs, ys, num
 
+def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), 
+                         ncpu = int(pynbody.config['number_of_threads'])):
+    from parallel_util import run_parallel, interruptible
+    
+    hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
+                                               make_plot=False,gridsize=gridsize)
+
+    dx = xs[1] - xs[0]
+    dy = ys[1] - ys[0]
+
+    print  dx, dy
+
+    # generate x,y grid
+        
+    points = np.array(np.meshgrid(xs, ys)).T.reshape(-1,1,2).squeeze()
+
+    annulus = pynbody.filt.Disc(rmax,zmax) & ~pynbody.filt.Disc(rmin,zmax) & ~pynbody.filt.Disc(rmax,zmin)
+
+    x = np.array(s.s[annulus][varx]).copy()
+    y = np.array(s.s[annulus][vary]).copy()
+    rxy  = np.array(s.s[annulus]['rxy']).copy()
+    z    = np.array(s.s[annulus]['z']).copy()
+    
+
+    # get the fit
+ 
+    res = np.array(run_parallel(fit_single_profile, list(points), 
+                                [x,y,rxy,z,dx,dy,rmin,rmax,zmin,zmax], processes=ncpu))
+
+    hr = res[:,0].reshape(gridsize).T
+    hz = res[:,1].reshape(gridsize).T
+    hr2 = res[:,2].reshape(gridsize).T
+    hz2 = res[:,3].reshape(gridsize).T
+    hrerr = res[:,4].reshape(gridsize).T
+    hzerr = res[:,5].reshape(gridsize).T    
+    fitnum = res[:,6].reshape(gridsize).T
+
+    
+    return hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum
+
+@interruptible
+def fit_single_profile(a) : 
+    point, x, y, rxy, z, dx, dy, rmin, rmax, zmin, zmax = a
+    
+    px,py = point
+    print 'point = ', point
+
+    ind = np.where((x > px - dx/2) & (x < px + dx/2) & 
+                   (y > py - dy/2) & (y < py + dy/2))[0]
+    
+    fitnum = len(ind)    
+    
+    if fitnum > 100: 
+        hr, hz, fitnum = diskfitting.two_exp_fit_simple(np.array(rxy[ind]),np.array(z[ind]),rmin,rmax,zmin,zmax)
+        hr2, hz2, hrerr, hzerr = diskfitting.mcerrors_simple(np.array(rxy[ind]), np.array(z[ind]), hr, hz, rmin, rmax, zmin, zmax, nwalkers = 6)
+    else : 
+        hr = -500
+        hz = -500
+        hr2 = -500
+        hz2 = -500
+        hrerr = float('Nan')
+        hzerr = float('Nan')
+    
+
+    return hr, hz, hr2, hz2, hrerr, hzerr, fitnum
+
+#@interruptible
+#def fit_single_errors(a): 
+    
 
 def get_vdisp_grid(s,varx,vary,gridsize=(10,10)) : 
 

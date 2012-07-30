@@ -57,6 +57,17 @@ def two_exp_fit(sim,rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',zmax='4 kpc'):
     else:
         return float('NaN'), float('NaN'), fitnum
 
+
+def two_exp_fit_simple(r,z,rmin,rmax,zmin,zmax) : 
+    fitnum = len(r)
+    if fitnum > 100:
+        hr, z0 = opt.fmin_powell(neg2expl,[1.0,1.0],
+                                 args=(r,z,rmin,rmax,zmin,zmax))
+        return hr, z0/2.0, fitnum
+    else:
+        return float('NaN'), float('NaN'), fitnum
+
+
 import emcee
 def mcerrors(sim,initparams, rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',
              zmax='4 kpc'):
@@ -69,15 +80,39 @@ def mcerrors(sim,initparams, rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',
 
     nwalkers, ndim = 6, 2
     sampler = emcee.EnsembleSampler(nwalkers, ndim, twoexp_likelihood,
-                          args=(sim.s[annulus]['rxy'].in_units('kpc'),
-                                sim.s[annulus]['z'].in_units('kpc'),
+                          args=(np.array(sim.s[annulus]['rxy'].in_units('kpc')),
+                                np.array(sim.s[annulus]['z'].in_units('kpc')),
                                 rmin,rmax,zmin,zmax))
 
     p0 = [np.random.rand(ndim) for i in xrange(nwalkers)]
+    
     sampler.run_mcmc(p0,1000)
     #import pdb; pdb.set_trace()
     return np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1]/2.0)
 
+def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6) : 
+    ndim = 2
+
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, twoexp_likelihood,
+                          args=(r,z,rmin,rmax,zmin,zmax))
+
+#    p0 = [np.random.rand(ndim) for i in xrange(nwalkers)]
+    print 'trying with %f %f'%(hr,hz)
+    p0 = [[np.random.normal(2.5,1),np.random.normal(.5,.1)] for i in xrange(nwalkers)]
+    #p0 = sampler.sampleBall([hr,hz],[hr/10.0, hz/10.0],nwalkers)
+    # following the 50-D gaussian example on the emcee page... 
+    # "burn-in"
+    pos, prob, state = sampler.run_mcmc(p0,1000)
+    # reset to clear the samples
+    sampler.reset()
+    # re-run starting from the final position of the chain
+    sampler.run_mcmc(pos, 1000, rstate0=state)
+    
+    #import pdb; pdb.set_trace()
+    return np.mean(sampler.flatchain[:,0]), np.mean(sampler.flatchain[:,1]/2.0), \
+        np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1]/2.0)
+    
+                 
 def plot_sech_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',
                       title=False,zmin=0.0,zmax=4.0):
     logN = np.log10(profile['density'].in_units(units))
