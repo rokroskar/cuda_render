@@ -59,7 +59,7 @@ def quick_plots(sim):
     sim.rotate_x(90)
     plot_central(sim, clear = False, units='m_p cm^-2', subplot=ax)    
     ax = plt.subplot(2,2,4)
-    pyn.plot.rho_T(sim, clear = False, t_range = [1,7], rho_range = [-7,10])
+    pyn.plot.rho_T(sim.g, clear = False, t_range = [1,7], rho_range = [-7,10])
 
 
 def smbh_orbits(output=False, processes = multiprocessing.cpu_count()/4, test=False):

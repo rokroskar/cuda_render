@@ -194,7 +194,7 @@ def horseshoe_orbits (processors=4) :
     cr_jz = SimArray(interpol.interp1d(p1['rbins'], p1['j_circ'])(cr_r),p1['j_circ'].units)
     cr_e  = SimArray(interpol.interp1d(p1['rbins'], p1['E_circ'])(cr_r),p1['E_circ'].units)
    
-    flist = glob.glob('/home/itp/roskar/isolated_runs/12M_hr/[1-9]/*.00???.gz')
+    flist = glob.glob('/home/itp/roskar/isolated_runs/12M_hr/6/*.00???.gz')
 #    flist += glob.glob('/home/itp/roskar/isolated_runs/12M_hr/7/*.00???.gz')
     flist.sort()
 
@@ -219,13 +219,13 @@ def horseshoe_orbits (processors=4) :
                pynbody.filt.LowPass('dj', -250)) & 
               pynbody.filt.LowPass('tform',sfirst.properties['a']))
 
-    spec_inds = [640778,1052173,1312193,632547,691094,945673]
-    spec_inds.sort()
+#    spec_inds = [640778,1052173,1312193,632547,691094,945673]
+#    spec_inds.sort()
 
  #   pinds = simple.where(s1.s)[0]
-#    pinds = one.where(s1.s)[0] # used for the horseshoe figures
+    pinds = one.where(s1.s)[0] # used for the horseshoe figures
     #pinds = three.where(s1.s)[0]
-    pinds = spec_inds
+    #pinds = spec_inds
     cr_in_jz = cr_jz[1] - 100
     cr_out_jz = cr_jz[1] + 100
     cr_in_e = interpol.interp1d(p1['j_circ'],p1['E_circ'])(cr_in_jz)
@@ -249,14 +249,16 @@ def horseshoe_orbits (processors=4) :
 
 
 
-    pos, vel, time = orbits.trace_orbits_parallel(flist,pinds,processors)
+    pos, vel, mass, phi, time = orbits.trace_orbits_parallel(flist,pinds,processors)
 #    pos, vel, time = orbits.trace_orbits(flist,pinds)
 
     x = pos[:,:,0].T
     y = pos[:,:,1].T
+    z = pos[:,:,2].T
     vx = vel[:,:,0].T
     vy = vel[:,:,1].T
-    
+    vz = vel[:,:,2].T
+    phi = phi.T
 
     dt = time - time[0]
 
@@ -266,16 +268,16 @@ def horseshoe_orbits (processors=4) :
     y_rot = x*np.sin(-omega*dt) + y*np.cos(-omega*dt)
     
     Rc = 5.5 # corotation radius?
-    phi = np.arctan2(y_rot, x_rot)
+    #phi = np.arctan2(y_rot, x_rot)
     
     xs = Rc*np.cos(phi)
     ys = Rc*np.sin(phi)
 
-    return x, y, x_rot, y_rot, vx, vy, time
+    return x, y, z, x_rot, y_rot, vx, vy, vz, mass, phi, time
 
 
 
-def plot_horseshoes_wavelet(x,y,t,p,omega,npages=2) : 
+def plot_horseshoes_wavelet(x,y,t,omega,p = None, npages=2) : 
     from matplotlib.collections import LineCollection
     from matplotlib.backends.backend_pdf import PdfPages
     
@@ -297,7 +299,12 @@ def plot_horseshoes_wavelet(x,y,t,p,omega,npages=2) :
     
     #inds = np.random.rand(ntot)*len(x)
 
-    sp_amp, sp_time, ft,fqs,gauss = ss.get_fulldisk_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0,9.0,omega-5,omega+5, window=True)
+    if p is None: 
+        sp_amp, sp_time, ft,fqs,gauss = ss.get_fulldisk_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0,9.0,omega-5,omega+5, window=True)
+    else : 
+        sp_amp, sp_time, ft,fqs,gauss = ss.get_band_amplitude('/home/itp/roskar/isolated_runs/12M_hr/complete_fourier.npz', 2.0,9.0,omega-5,omega+5, get_crs(p,omega)[0], window=True)
+
+
     sp_ind = np.where((sp_time >= t[0]) & (sp_time <= t[-1]))[0]
     sp_amp = sp_amp[sp_ind]
     sp_amp = np.abs(sp_amp)
@@ -640,7 +647,7 @@ def get_kd(p, patspeed, s_loc1, s_loc2, filt) :
 
     dj = np.abs(s_loc1.s['dj'][ind1])
     dj.sort()
-    jcut = dj[len(dj)*.90]
+    jcut = dj[len(dj)*.95]
     
     print jcut
     
@@ -664,7 +671,7 @@ def get_kd(p, patspeed, s_loc1, s_loc2, filt) :
     return kd, omega, ind
     
 
-def plot_kd(s1,s2,patspeed,filt=None) :
+def plot_kd(s1,s2,patspeeds,filt=None) :
 
     for s in [s1,s2] :
         cen = pynbody.analysis.halo.center(s, retcen=True)
@@ -674,10 +681,14 @@ def plot_kd(s1,s2,patspeed,filt=None) :
 
     p = pynbody.analysis.profile.Profile(s1,max=15, nbins=20, min=1e-3, type='lin')
 
-    kd,omega,ind = get_kd(p,patspeed,s1,s2,filt)
+    for patspeed in patspeeds:
+
+        kd,omega,ind = get_kd(p,patspeed,s1,s2,filt)
     
-    plt.plot(omega,kd(omega),label='$\Omega_p = ' + str(patspeed) + '$',linewidth=2)
+        plt.plot(omega,kd(omega),label='$\Omega_p = ' + str(patspeed) + '$',linewidth=2)
+
     plt.xlabel('$\Delta E/\Delta j_z - \Omega_p$')
+    plt.title('%.1f - %.1f Gyr'%(s1.properties['a'], s2.properties['a']))
     plt.legend()
 
 def spiral_amps() : 
@@ -703,7 +714,10 @@ def spiral_amps() :
     plt.legend([l1,l2,l3], ['$\Omega_p = 15-25$','$\Omega_p = 40-50$', '$\Omega_p = 65-75$'], loc='upper left')
 
 
-def plot_horseshoes_wavelet_small(x,y,t,p,omega1,omega2):
+def plot_horseshoes_wavelet_small(x,y,z,vx,vy,vz,phi,t,p,omega1,omega2):
+    #
+    # used omega1 = 65 and omega2 = 39 for figure 11 in the paper
+    #
 
     from matplotlib.collections import LineCollection
     from matplotlib.backends.backend_pdf import PdfPages
@@ -815,7 +829,12 @@ def plot_horseshoes_wavelet_small(x,y,t,p,omega1,omega2):
     plt.ylim(sp_amp2.min(),sp_amp2.max())
     plt.annotate('spiral amplitude', (6.1,0.04), fontsize=15)
 
+    ax = plt.subplot(3,3,9, aspect = 'auto')
+    make_jacobi_figure(x,y,z,vx,vy,vz,phi,t,omega1,omega2)
+
     plt.subplots_adjust(hspace=.3,wspace=.3)
+
+    
 
 def make_redist_plots(x,y,t) : 
 
@@ -865,8 +884,9 @@ def make_redist_plots(x,y,t) :
 
         ax.add_collection(lc)
 
-def toomre_q_fig(): 
+def toomre_q_fig():
     from matplotlib.font_manager import FontProperties
+    fontsize = 20
 
     flist = ['2/12M_hr.00200', '5/12M_hr.00500', '8/12M_hr.00800', 
              '10/12M_hr.01000']
@@ -883,28 +903,105 @@ def toomre_q_fig():
     ax = plt.subplot(2,1,1)
 
     for i,p in enumerate(ps) :
-        plt.plot(p['rbins'],p['Q'],'k'+lines[i],label=labels[i])
+        plt.plot(p['rbins'],p['Q'],'k'+lines[i],label=labels[i],linewidth=2)
 
         if i == len(flist)-1:
-            ax.set_ylabel('$Q$')
+            ax.set_ylabel('$Q$',fontsize=fontsize,fontweight='bold')
             ax.set_ylim(0,10)
             ax.xaxis.set_ticklabels("")
     plt.legend(loc='upper left',prop=FontProperties(size='small'))
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label1.set_fontsize(fontsize)
+        tick.label1.set_fontweight('bold')
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label1.set_fontsize(fontsize)
+        tick.label1.set_fontweight('bold')
 
     ax = plt.subplot(2,1,2)
     ax2 = ax.twinx()
     
     for i,p in enumerate(ps) :
-        ax.plot(p['rbins'],p['density'].in_units('Msol kpc^-2'),'k'+lines[i])
-        ax2.plot(p['rbins'],p['vr_disp'],'r'+lines[i])
+        ax.plot(p['rbins'],p['density'].in_units('Msol kpc^-2'),'k'+lines[i],linewidth=2)
+        ax2.plot(p['rbins'],p['vr_disp'],'r'+lines[i],linewidth=2)
 
         if i == len(flist)-1:
-            ax.set_ylabel('$\Sigma_{\star}$ [M$_{\odot}$ kpc$^{-2}$]')
-            ax.set_xlabel('$R$ [kpc]')
+            ax.set_ylabel('$\Sigma_{\star}$ [M$_{\odot}$ kpc$^{-2}$]',fontsize=fontsize,fontweight='bold')
+            ax.set_xlabel('$R$ [kpc]',fontsize=fontsize,fontweight='bold')
             ax.semilogy()
-            ax2.set_ylabel('$\sigma_{r}$ [km/s]')
-
+            ax2.set_ylabel('$\sigma_{r}$ [km/s]',fontsize=fontsize,fontweight='bold')
+    
+    for ax in [ax,ax2]:
+        for tick in ax.xaxis.get_major_ticks():
+            tick.label1.set_fontsize(fontsize)
+            tick.label1.set_fontweight('bold')
+        for tick in ax.yaxis.get_major_ticks():
+            tick.label1.set_fontsize(fontsize)
+            tick.label1.set_fontweight('bold')
 
 @interruptible
 def load_single_file(filename):
      return pynbody.load(filename[0])
+
+
+def make_jacobi_figure(x=None,y=None,z=None,vx=None,vy=None,vz=None,phi=None,t=None,omega1=65,omega2=39):
+    import spiral_structure as ss
+    from matplotlib.font_manager import FontProperties
+
+    # these are the indices of particles from Fig. 7
+
+    if x is None: 
+        spec_inds = [640778,1052173,1312193,632547,691094,945673]
+        spec_inds.sort()
+
+        x,y,z,xr,yr,vx,vy,vz,mass,phi,t = horseshoe_orbits(20)
+        x=x[[1,4]]
+        y=y[[1,4]]
+        z=z[[1,4]]
+        vx=vx[[1,4]]
+        vy=vy[[1,4]]
+        vz=vz[[1,4]]
+        phi=phi[[1,4]]
+        
+
+    E1, L1, J1 = ss.get_jacobi_integral(x,y,z,vx,vy,vz,phi,t,omega1)
+    E2, L2, J2 = ss.get_jacobi_integral(x,y,z,vx,vy,vz,phi,t,omega2)
+    
+#    J1 /= 1e5
+#    J2 /= 1e5
+
+    ax = plt.gca().add_subplot(121)
+
+    plt.plot(t, J1[0]/J1[0][0], 'g-', label = '$\Omega_p$ = %d km/s/kpc'%(int(omega1)))
+    plt.plot(t, J1[1]/J1[1][0], 'g--')
+    plt.plot(t, J2[0]/J2[0][-1], 'b-', label = '$\Omega_p$ = %d km/s/kpc'%(int(omega2)))
+    plt.plot(t, J2[1]/J2[1][-1], 'b--')
+    
+        
+    
+    plt.xlabel('$t~\mathrm{[Gyr]}$')
+    plt.ylabel('$E_j/E_{j,0}$')
+
+    plt.legend(loc='upper center',prop=FontProperties(size=11),frameon=False)
+    
+#    ax2 = plt.gca().twinx()
+    
+    ax2 = plt.gca().add_subplot(122)
+
+    plt.plot(t, E1[0]/E1[0][0], 'r-', label = '$E$')
+    plt.plot(t, E1[1]/E1[1][0], 'r--')
+    #plt.plot(t, L1[0]/L1[0][0], 'k-', label = '$L$')
+    #plt.plot(t, L1[1]/L1[1][0], 'k--')
+    
+    ax2.set_ylabel('$E/E_0$')
+
+    plt.xlim(t[0],t[-1])
+
+
+        
+    
+
+
+
+    
+
+    

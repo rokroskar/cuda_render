@@ -381,7 +381,7 @@ def dedj(s1, s2, patspeeds, filelist = None):
         cen = pynbody.analysis.halo.center(s, retcen=True)
         if cen.any() > 1e-5 :
             pynbody.analysis.angmom.faceon(s, cen = cen, disk_size='3 kpc')
-        s.s['jz'] = s.s['j'][:,2]
+
     #    s.physical_units()
 
     s1.s['dj'] = s2.s['jz'][:len(s1.s)] - s1.s['jz']
@@ -543,23 +543,24 @@ def migrators_distr(s1,s2,s3, patspeed):
 
     dj = np.abs(s1.s['dj'])
     dj.sort()
-    jcut = dj[len(dj)*.98]
+    jcut = dj[len(dj)*.95]
     print jcut
 
     outward = np.where(s1.s['dj'] > jcut)[0]
     inward  = np.where(s1.s['dj'] < -jcut)[0]
 
     hout,xout,yout = pynbody.plot.generic.gauss_kde(s3.s['x'][outward],s3.s['y'][outward], 
+                                                    mass = s3.s['mass'][outward],
                                                     make_plot=False, 
                                                     x_range = [-15,15], 
-                                                    y_range = [-15,15])
+                                                    y_range = [-15,15], norm = True)
 
     hin,xin,yin = pynbody.plot.generic.gauss_kde(s3.s['x'][inward],s3.s['y'][inward], 
+                                                 mass = s3.s['mass'][inward],
                                                  make_plot=False, 
                                                  x_range = [-15,15],
-                                                 y_range = [-15,15])
+                                                 y_range = [-15,15], norm = True)
 
-    
     
     old = pynbody.filt.HighPass('age', 0.5)
     disk = pynbody.filt.Disc(15, 0.5)
@@ -573,26 +574,19 @@ def migrators_distr(s1,s2,s3, patspeed):
 
     plt.figure()
     ax = plt.gca()
-    #ax.spines['left'].set_position(('data', 0))
-    #ax.spines['bottom'].set_position(('data', 0))
-    #ax.spines['right'].set_position(('data', -1))
-    #ax.spines['top'].set_position(('data',  -1))
+
     ax.add_patch(plt.Circle((0,0),radius=cr_r,color='green',
                             fill=False, linestyle='dashed', linewidth=2))
 
-    plt.contour(xout,yout,hout,np.linspace(1,50,5),colors='blue',label='outward',linewidths=2)
-    plt.contour(xin,yin,hin,np.linspace(1,50,5),colors='red',linestyles='dashed',label='inward',linewidths=2)
+    norm = plt.Normalize()
+    norm2 = plt.Normalize()
 
-    #h,x,y = pynbody.plot.generic.gauss_kde(s3.s['x'][0:len(s1.s)],s3.s['y'][0:len(s1.s)], 
-    #                                       weights = s1.s['dj'].in_units('kpc km s**-1'),
-    #                                       x_range = [-15,15],
-    #                                       y_range = [-15,15],
-    #                                       make_plot=False)
+    # display the densities 
+    
+    plt.imshow(norm(hout)-norm2(hin),extent=(-15,15,-15,15),cmap=plt.cm.RdBu,origin='lower')
+    
+    # show the spirals
 
-#    im = plt.imshow(h,cmap=plt.cm.RdGy,origin='lower left', extent=[-15,15,-15,15],
-#                    vmin=-5e4,vmax=5e4)
-#    plt.colorbar(im,format="%.2e").set_label('$\\mathrm{kpc~km~s^{-1}}$')
- 
     pynbody.plot.fourier_map(s3.s[old],mmin=2,mmax=5,rmax=15,nbins=50,nphi=1000,
                              linewidths=2, colors='black')
     
@@ -609,29 +603,15 @@ def migrators_distr(s1,s2,s3, patspeed):
         tick.label1.set_fontsize(fontsize)
         tick.label1.set_fontweight('bold')
 
-#    for line in ax.xaxis.get_ticklines()+ax.yaxis.get_ticklines():
-#        line.set_markeredgewidth(3)
-
     plt.xlabel('$x~\\mathrm{[kpc]}$',fontsize=fontsize,fontweight='bold')
     plt.ylabel('$y~\\mathrm{[kpc]}$',fontsize=fontsize,fontweight='bold')
+    plt.title('%.1f - %.1f Gyr'%(s1.properties['a'], s2.properties['a']), fontsize=20)
 
-    plt.xlim(-10,10)
-    plt.ylim(-10,10)
+    plt.xlim(-8,8)
+    plt.ylim(-8,8)
 
-    #plt.figure()
-
-    #kde_out = kde(s3.s['az'][outward])
-    #kde_in  = kde(s3.s['az'][inward])
-
-    #phis = np.linspace(-np.pi,np.pi,1000)
+    return hin, hout
     
-    #plt.plot(phis,kde_out(phis), color='blue', label = 'outward')
-    #plt.plot(phis,kde_in(phis),  color='red', label = 'inward')
-    #plt.xlabel('$\phi$ [rad]')
-    #plt.legend()
-
-
-
 def make_fourier_map(flist,nrow,ncol,nbins=50,nmin=1000,nphi=1000,mmin=1,mmax=5,rmax=10,levels=[-.5,-.3,-.2,-.1,-.05,-.01,.01,.05,.1,.2,.3,.5]) : 
 
     from matplotlib import cm
@@ -668,6 +648,8 @@ def make_fourier_map(flist,nrow,ncol,nbins=50,nmin=1000,nphi=1000,mmin=1,mmax=5,
 
 def make_ddj_fig(s1,s2,patspeeds) :
 
+    fontsize=20
+
     pynbody.analysis.angmom.faceon(s1)
     pynbody.analysis.angmom.faceon(s2)
     
@@ -675,8 +657,8 @@ def make_ddj_fig(s1,s2,patspeeds) :
     
     pynbody.plot.generic.gauss_kde(s1.s['jz'],s1.s['dj'],weights=s1.s['mass'],scalemin=1)
     
-    plt.xlabel('$j_z$')
-    plt.ylabel('$\Delta j_z$')
+    plt.xlabel('$j_z$', fontsize=20, fontweight='bold')
+    plt.ylabel('$\Delta j_z$', fontsize=20, fontweight='bold')
 
     p = pynbody.analysis.profile.Profile(s1,max=15,bins=30,type='log',min=1e-3)
 
@@ -687,66 +669,38 @@ def make_ddj_fig(s1,s2,patspeeds) :
     
         plt.plot([cr_jz,cr_jz],[-1000,1000],color=colors[i],linewidth=2)
 
+    plt.ylim(-800,800)
+
+    ax = plt.gca()
+
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label1.set_fontsize(fontsize)
+        tick.label1.set_fontweight('bold')
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label1.set_fontsize(fontsize)
+        tick.label1.set_fontweight('bold')
+
+    plt.title('%.1f - %.1f Gyr'%(s1.properties['a'], s2.properties['a']), fontsize=fontsize)
+
+
+def get_jacobi_integral(x,y,z,vx,vy,vz,phi,t,omega) : 
     
-
-def get_crs(p,patspeed):
-    import scipy.interpolate as interpol
-    from pynbody.array import SimArray
-
-    cr_r  = SimArray(interpol.interp1d(p['omega'][::-1], 
-                                       p['rbins'][::-1])(patspeed),p['rbins'].units)
-    cr_jz = SimArray(interpol.interp1d(p['rbins'], p['j_circ'])(cr_r),p['j_circ'].units)
-    cr_e  = SimArray(interpol.interp1d(p['rbins'], p['E_circ'])(cr_r),p['E_circ'].units)
-
-    return cr_r, cr_jz, cr_e
-
-
-if __name__ == '__main__':
-
-    import getopt, sys, os
-
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], "owf:a:p:m:", ["filepattern"])
-    except:
-        print 'bad options'
-        sys.exit(2)
-
-    annotate = None
-    figure_name = None
-    output = False
-    overwrite = False
-    file_pattern = "/[1-9]/*.00???"
-    m = 2
+    dt = t - t[0]
     
-    for opt, arg in opts :
-        if opt in ("-f", "--filepattern"):
-            file_pattern = arg
-        elif opt == "-o" :
-            output = True
-        elif opt == "-w" :
-            overwrite = True
-        elif opt == '-a':
-            annotate = arg
-            figure_name = annotate
-        elif opt == '-p' :
-            figure_name = arg
-        elif opt == '-m' :
-            m = np.int(arg)
+    xr = x*np.cos(-omega*dt) - y*np.sin(-omega*dt)
+    yr = x*np.sin(-omega*dt) + y*np.cos(-omega*dt)
+
+    vxr = vx - omega*yr
+    vyr = vy + omega*xr
+
+    E = 0.5 * (vx**2 + vy**2) + phi
+    #L = np.sqrt((y*vz-z*vy)**2+(z*vx-x*vz)**2+(x*vy - y*vx)**2)
+    L = x*vy - y*vx
+#    L = (xr*vyr - yr*vxr)
+    J = E - omega*L
+
+    return E, L, J
+    
 
     
     
-    if not os.path.isfile("complete_fourier.npz") :
-        c, t, r = fourier_sequence(output=output, overwrite = overwrite, file_pattern = file_pattern)
-    else :
-        print "loading fourier data from \"complete_fourier.npz\""
-        data = np.load("complete_fourier.npz")
-
-        print "constructed with:"
-        for field in ['min','max','nbins','file_pattern','cutoff_age'] :
-            print field + ' = ' + np.str(data[field])
-            
-        c = data['c']
-        t = data['t']
-        r = data['r']
-      
-

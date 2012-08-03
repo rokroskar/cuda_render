@@ -102,14 +102,14 @@ def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6) :
     #p0 = sampler.sampleBall([hr,hz],[hr/10.0, hz/10.0],nwalkers)
     # following the 50-D gaussian example on the emcee page... 
     # "burn-in"
-    pos, prob, state = sampler.run_mcmc(p0,1000)
+    pos, prob, state = sampler.run_mcmc(p0,100)
     # reset to clear the samples
     sampler.reset()
     # re-run starting from the final position of the chain
     sampler.run_mcmc(pos, 1000, rstate0=state)
     
     #import pdb; pdb.set_trace()
-    return np.mean(sampler.flatchain[:,0]), np.mean(sampler.flatchain[:,1]/2.0), \
+    return np.median(sampler.flatchain[:,0]), np.median(sampler.flatchain[:,1]/2.0), \
         np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1]/2.0)
     
                  

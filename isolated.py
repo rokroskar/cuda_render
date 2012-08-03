@@ -501,7 +501,7 @@ def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10),
     fitnum = res[:,6].reshape(gridsize).T
 
     
-    return hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum
+    return hist, hz, hr, hr2, hz2, hzerr, hrerr, xs, ys, fitnum
 
 @interruptible
 def fit_single_profile(a) : 

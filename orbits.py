@@ -49,6 +49,7 @@ def single_file_pos(file, pinds, family) :
             pos = np.zeros((len(pinds),3))
             vel = np.zeros((len(pinds),3))
         mass = subs[pinds]['mass']
+        phi = subs[pinds]['phi']
         #metals = subs[pinds]['metals']
 
         good = np.where(pinds < len(subs))[0]
@@ -56,7 +57,7 @@ def single_file_pos(file, pinds, family) :
             pos[good] = subs[pinds[good]]['pos']
             vel[good] = subs[pinds[good]]['vel']
 
-        return np.array(pos), np.array(vel), np.array(mass), s.properties['a']
+        return np.array(pos), np.array(vel), np.array(mass), np.array(phi), s.properties['a']
 
     except KeyboardInterrupt: 
         raise KeyboardInterruptError()
@@ -66,6 +67,7 @@ def trace_orbits(filelist, pinds) :
     pos = SimArray(np.zeros((len(filelist),len(pinds),3)))
     vel = SimArray(np.zeros((len(filelist),len(pinds),3)))
     mass = SimArry(np.zeros((len(filelist),len(pinds),1)))
+    phi = SimArry(np.zeros((len(filelist),len(pinds),1)))
     time = SimArray(np.zeros(len(filelist)))
     
     cen_size = 5
@@ -109,7 +111,7 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
     pos = np.empty((len(filelist), len(pinds), 3))
     vel = np.empty((len(filelist), len(pinds), 3))
     mass = np.empty((len(filelist), len(pinds)))
-#    metals = np.empty((len(filelist), len(pinds)))
+    phi = np.empty((len(filelist), len(pinds)))
     time = np.empty(len(filelist))
 
     if not test: 
@@ -131,11 +133,11 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
         pos[i] = res[i][0]
         vel[i] = res[i][1]
         mass[i] = res[i][2]
-#        metals[i] = res[i][3]
-        time[i] = res[i][3]
+        phi[i] = res[i][3]
+        time[i] = res[i][4]
         
 
-    return pos, vel, mass, time        
+    return pos, vel, mass, phi, time        
     
 
 def orbit_cwt(x,y,t,pad=True, ax = None, plot_ridges = False) :
