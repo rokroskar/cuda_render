@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # see Bovy, Rix, Liu, Hogg, Beers + Lee 2012, ApJ 753, 148
 # though this is much simpler since we don't have selection
 # function to deal with
-def twoexp_likelihood(x=[1.0,1.0],rpos=None,zpos=None,rmin=4.0,rmax=10.0,
+def exp_sech_likelihood(x=[1.0,1.0],rpos=None,zpos=None,rmin=4.0,rmax=10.0,
                       zmin=0.0, zmax=3.0):
 
     hr = x[0]
@@ -31,6 +31,32 @@ def twoexp_likelihood(x=[1.0,1.0],rpos=None,zpos=None,rmin=4.0,rmax=10.0,
                 (math.tanh(zmax/hz)-math.tanh(zmin/hz)))
 
     return np.sum((-rpos/hr + np.log(np.cosh(np.abs(zpos)/hz)**-2))) - len(rpos)*np.log(norm_int)
+
+
+def twoexp_likelihood(x=[1.0,1.0],rpos=None,zpos=None,rmin=4.0,rmax=10.0,
+                      zmin=0.0, zmax=3.0):
+
+    hr = x[0]
+    if hr <= 0.1 or hr > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    hz = x[1]
+    if hz <= 0.1 or hz > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    if isinstance(rmin, un.UnitBase) :
+        rmin=rmin.in_units('kpc')
+    if isinstance(rmax, un.UnitBase) :
+        rmax=rmax.in_units('kpc')
+    if isinstance(zmin, un.UnitBase) :
+        zmin=zmin.in_units('kpc')
+    if isinstance(zmax, un.UnitBase) :
+        zmax=zmax.in_units('kpc')
+
+    norm_int = (4.0*math.pi*hr*hz*((np.exp(-rmax/hr)*(hr + rmax) - np.exp(-rmin/hr)*(hr + rmin))*
+                                   (np.exp(-zmax/hz) - np.exp(-zmin/hz)))) 
+
+    return np.sum((-rpos/hr - np.abs(zpos)/hz)) - len(rpos)*np.log(norm_int)
 
 def neg2expl(*a):
     # return negative of likelihood so that minimization scheme maximize 
@@ -97,7 +123,7 @@ def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6) :
                           args=(r,z,rmin,rmax,zmin,zmax))
 
 #    p0 = [np.random.rand(ndim) for i in xrange(nwalkers)]
-    print 'trying with %f %f'%(hr,hz)
+ #   print 'trying with %f %f'%(hr,hz)
     p0 = [[np.random.normal(2.5,1),np.random.normal(.5,.1)] for i in xrange(nwalkers)]
     #p0 = sampler.sampleBall([hr,hz],[hr/10.0, hz/10.0],nwalkers)
     # following the 50-D gaussian example on the emcee page... 
