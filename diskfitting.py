@@ -63,8 +63,11 @@ def neg2expl(*a):
     # likelihood
     return -1*(twoexp_likelihood(*a))
 
+def negexpsech(*a):
+    return -1*(exp_sech_likelihood(*a))
 
-def two_exp_fit(sim,rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',zmax='4 kpc'):
+
+def two_exp_fit(sim,rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',zmax='4 kpc', func = neg2expl):
 
     if isinstance(rmin, str): rmin=un.Unit(rmin)
     if isinstance(rmax, str): rmax=un.Unit(rmax)
@@ -75,21 +78,21 @@ def two_exp_fit(sim,rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',zmax='4 kpc'):
     fitnum = len(sim.s[annulus])
     print "Fitting %d stars"%(fitnum)
     if fitnum > 100:
-        hr, z0 = opt.fmin_powell(neg2expl,[1.0,1.0],
+        hr, z0 = opt.fmin_powell(func,[1.0,1.0],
                           args=(sim.s[annulus]['rxy'].in_units('kpc'),
                                 sim.s[annulus]['z'].in_units('kpc'),
                                 rmin,rmax,zmin,zmax))
-        return hr, z0/2.0, fitnum
+        return hr, z0, fitnum
     else:
         return float('NaN'), float('NaN'), fitnum
 
 
-def two_exp_fit_simple(r,z,rmin,rmax,zmin,zmax) : 
+def two_exp_fit_simple(r,z,rmin,rmax,zmin,zmax,func=neg2expl) : 
     fitnum = len(r)
     if fitnum > 100:
-        hr, z0 = opt.fmin_powell(neg2expl,[1.0,1.0],
+        hr, z0 = opt.fmin_powell(func,[1.0,1.0],
                                  args=(r,z,rmin,rmax,zmin,zmax))
-        return hr, z0/2.0, fitnum
+        return hr, z0, fitnum
     else:
         return float('NaN'), float('NaN'), fitnum
 
@@ -116,10 +119,10 @@ def mcerrors(sim,initparams, rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',
     #import pdb; pdb.set_trace()
     return np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1]/2.0)
 
-def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6) : 
+def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6,func=twoexp_likelihood) : 
     ndim = 2
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, twoexp_likelihood,
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, func,
                           args=(r,z,rmin,rmax,zmin,zmax))
 
 #    p0 = [np.random.rand(ndim) for i in xrange(nwalkers)]
@@ -135,8 +138,8 @@ def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6) :
     sampler.run_mcmc(pos, 1000, rstate0=state)
     
     #import pdb; pdb.set_trace()
-    return np.median(sampler.flatchain[:,0]), np.median(sampler.flatchain[:,1]/2.0), \
-        np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1]/2.0)
+    return np.median(sampler.flatchain[:,0]), np.median(sampler.flatchain[:,1]), \
+        np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1])
     
                  
 def plot_sech_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',
@@ -170,7 +173,7 @@ def plot_sech_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',
         plt.savefig(outfig+'.png')
     plt.clf()
 
-def plot_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',title=False,
+def plot_profile(profile,fith=1.0,xy=(0,0),outfig=False,units='m_p cm^-2',title=False,
                  rmin='4 kpc',rmax='10 kpc'):
     if isinstance(rmin, str): rmin=un.Unit(rmin)
     if isinstance(rmax, str): rmax=un.Unit(rmax)
@@ -180,14 +183,14 @@ def plot_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',title=False,
     rad = profile['rbins'].in_units('kpc')
 
     # Do simple fit to get normalization
-    #expfit = np.polyfit(np.array(rad[good]), np.array(logN[good]), 1)
+    expfit = np.polyfit(np.array(rad[good]), np.array(logN[good]), 1)
         # 1.0857 is how many magnitudes a 1/e decrease is
-    #h=-1.0857/expfit[0]
-    #N_0=expfit[1]
-    N_0 = np.log10(np.sum(vprofile['density'].in_units(units)) /
-                   (4.0*hz*(math.tanh(zmax/(2.0*hz))-math.tanh(zmin/(2.0*hz))))/
-                   (2.0*math.pi*hr*(-math.exp(-rmax/hr)*(hr + rmax) +
-                                     math.exp(-rmin/hr)*(hr + rmin))))
+    h=-1.0857/expfit[0]
+    N_0=expfit[1]
+    #N_0 = np.log10(np.sum(vprofile['density'].in_units(units)) /
+    #               (4.0*hz*(math.tanh(zmax/(2.0*hz))-math.tanh(zmin/(2.0*hz))))/
+    #               (2.0*math.pi*hr*(-math.exp(-rmax/hr)*(hr + rmax) +
+    #                                 math.exp(-rmin/hr)*(hr + rmin))))
     #N_0=np.log10(np.sum(profile['density'].in_units(units)) /
     #             2.0*math.pi*fith*(-np.exp(-rmax/fith)*(fith + rmax) + 
     #                                np.exp(-rmin/fith)*(fith + rmin)))
@@ -202,9 +205,10 @@ def plot_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',title=False,
     plt.xlabel('distance [kpc]')
     plt.ylabel('log$_{10}$(surface density [$'+pynbody.units.Unit(units).latex()+'$])')
     plt.legend(loc=0)
+    plt.title('x = %.2f y = %.2f'%(xy[0],xy[1]))
     if outfig:
         plt.savefig(outfig+'.png')
-    plt.clf()
+
 
 def plot_two_profiles(vprofile, rprofile,hz=1.0,hr=1.0,outfig=False,
                       units='m_p cm^-2',title=False,rmin='4 kpc',

@@ -398,7 +398,7 @@ def get_zrms_grid(s,varx,vary,rmin,rmax,zmin,zmax) :
                 zrms[j,i] = -500
     return hist, zrms, zrms_i, xs, ys
 
-def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False):
+def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), simplefit=True, plots=False):
     from fitting import fit_profile, sech2, expo, overplot_fit
     from matplotlib.backends.backend_pdf import PdfPages
     from pynbody.analysis.profile import VerticalProfile
@@ -416,7 +416,7 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False)
     num = np.zeros((len(xs), len(ys)))
     hzerr = np.zeros((len(xs),len(ys)))
     hrerr = np.zeros((len(xs),len(ys)))
-#    rho0 = np.zeros((len(xs),len(ys)))
+    rho0 = np.zeros((len(xs),len(ys)))
 
     if plots:
         pp = PdfPages('vertical_fits.pdf')
@@ -429,31 +429,44 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False)
             
             print i,j,len(ind)
             if len(ind) > 100 : 
-#                prof = VerticalProfile(s.s[ind], 0,20,3.0,nbins=10)
+                prof = VerticalProfile(s.s[ind], 0,20,3.0,nbins=10)
+                
+                if simplefit: # doing the least squares fit
 
-                #fit, chisq =  fit_profile(prof, sech2,[prof['density'].in_units('Msol pc^-3')[0],.2], 
-                 #                         'Msol pc^-3', 0, 3)
+                    fit, chisq =  fit_profile(prof, expo,[prof['density'].in_units('Msol pc^-3')[0],.2], 
+                                              'Msol pc^-3', 0, 3)
 
-                hr0, hz0, fitnum = diskfitting.two_exp_fit(s.s[ind],rmin=rmin,rmax=rmax,zmin=zmin,zmax=zmax)
-                hrerr0, hzerr0 = diskfitting.mcerrors(s.s[ind],[hr0,hz0],rmin=rmin,
-                                                      rmax=rmax,zmin=zmin,zmax=zmax)
-                                                         
 
-                hz[j,i] = hz0
-                hr[j,i] = hr0
-                num[j,i] = fitnum
-                hzerr[j,i] = hzerr0
-                hrerr[j,i] = hrerr0
+                    hz[j,i] = fit[1]
+                    hr[j,i] = float('Nan')
+                    num[j,i] = len(ind)
+                    hzerr[j,i] = float('Nan')
+                    hrerr[j,i] = float('Nan')
+                    rho0[j,i] = fit[0]
+                    
+                    if plots: 
+                        plt.plot(prof['rbins'], prof['density'].in_units('Msol pc^-3'))
+                        plt.semilogy()
+                        plt.annotate('%f, %f'%(x,y), (0.5,0.5), xycoords='figure fraction')
+                        overplot_fit(fit,expo)
+                        pp.savefig()
+                        plt.clf()
+                else: # doing the maximum likelihood fit
+                    hr0, hz0, fitnum = diskfitting.two_exp_fit(s.s[ind],rmin=rmin,rmax=rmax,zmin=zmin,zmax=zmax)
+#                    hrerr0, hzerr0 = diskfitting.mcerrors(s.s[ind],[hr0,hz0],rmin=rmin,
+ ###                                                         rmax=rmax,zmin=zmin,zmax=zmax)
+                    hz[j,i] = hz0*2
+                    hr[j,i] = hr0
+                    hzerr[j,i] = float('Nan')
+                    hrerr[j,i] = float('Nan')
+                    num[j,i] = fitnum
+                    
+                    if plots:
+                        prof = VerticalProfile(s.s[ind], 0,20,3.0,nbins=10)
+                        diskfitting.plot_profile(prof,hz0*2,xy=(x,y),units='m_p cm^-3')
+                        pp.savefig()
+                        plt.clf()
 
-#                rho0[j,i] = fit[0]
-            
-                if plots: 
-                    plt.plot(prof['rbins'], prof['density'].in_units('Msol pc^-3'))
-                    plt.semilogy()
-                    plt.annotate('%f, %f'%(x,y), (0.5,0.5), xycoords='figure fraction')
-                    overplot_fit(fit,expo)
-                    pp.savefig()
-                    plt.clf()
             else : 
                 hz[j,i] = -500
                 
@@ -461,7 +474,7 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), plots=False)
     if plots: 
         pp.close()
             
-    return hist, hz, hr, hzerr, hrerr, xs, ys, num
+    return hist, hz, hr, float('Nan'), float('Nan'),hzerr, hrerr, xs, ys, num
 
 def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), 
                          ncpu = int(pynbody.config['number_of_threads'])):
@@ -501,7 +514,7 @@ def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10),
     fitnum = res[:,6].reshape(gridsize).T
 
     
-    return hist, hz, hr, hr2, hz2, hzerr, hrerr, xs, ys, fitnum
+    return hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum
 
 @interruptible
 def fit_single_profile(a) : 
@@ -518,6 +531,7 @@ def fit_single_profile(a) :
     if fitnum > 100: 
         hr, hz, fitnum = diskfitting.two_exp_fit_simple(np.array(rxy[ind]),np.array(z[ind]),rmin,rmax,zmin,zmax)
         hr2, hz2, hrerr, hzerr = diskfitting.mcerrors_simple(np.array(rxy[ind]), np.array(z[ind]), hr, hz, rmin, rmax, zmin, zmax, nwalkers = 6)
+        
     else : 
         hr = -500
         hz = -500

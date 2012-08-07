@@ -93,10 +93,11 @@ def zrms_deltar_rform(s):
         
         plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]))
 
-def hz_deltar_rform(s, gridsize=(10,10),vmin=0,vmax=1.2):
+def hz_deltar_rform(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['number_of_threads']):
     
     fig = plt.figure(figsize=(15,15))
-    
+    fig2 = plt.figure(figsize=(15,15))
+
     pynbody.analysis.angmom.faceon(s)
 
     if 'rform' not in s.s.keys():
@@ -113,27 +114,37 @@ def hz_deltar_rform(s, gridsize=(10,10),vmin=0,vmax=1.2):
         rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
         drfilt = pynbody.filt.LowPass('dr', 10)
         jzfilt = pynbody.filt.BandPass('jz_jzmax', .9, 1.01)
-        hist, hz, hr, hzerr, hrerr, xs, ys = iso.get_hz_grid(s.s[rfilt&drfilt], 'dr', 'age', 
-                                                             rmin=0,rmax=20,zmin=0,zmax=3,gridsize=gridsize)
+        hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum = \
+            iso.get_hz_grid_parallel(s.s[rfilt&drfilt], 'dr', 'age', 
+                                     rmin=0,rmax=20,zmin=0,zmax=3,
+                                     gridsize=gridsize,ncpu=ncpu)
         
 
         ax = fig.add_subplot(2,2,i+1)
-
-        plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
-
-        im = plt.imshow(hz,origin='lower',
-                        extent=(min(xs), max(xs), min(ys), max(ys)),
-                        aspect='auto',vmin=vmin,vmax=vmax,interpolation='nearest')
-        
-        cb = plt.colorbar(im)
+        ax.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
+        im = ax.imshow(hz,origin='lower',
+                       extent=(min(xs), max(xs), min(ys), max(ys)),
+                       aspect='auto',vmin=vmin,vmax=vmax,interpolation='nearest')
+        cb = fig.colorbar(im)
         cb.set_label('$h_z [kpc]$',fontsize='smaller')
-        
-        plt.xlabel('$\Delta R$ [kpc]',fontsize='smaller')
-        plt.ylabel('Age [Gyr]',fontsize='smaller')
-        
-        plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small')
+        ax.set_xlabel('$\Delta R$ [kpc]',fontsize='smaller')
+        ax.set_ylabel('Age [Gyr]',fontsize='smaller')
+        ax.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small')
 
-def hz_feh_ofe(s,gridsize=(10,10)):
+
+        # plotting the errors
+        ax2 = fig2.add_subplot(2,2,i+1)
+        ax2.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
+        im = ax2.imshow(hzerr/hz,origin='lower',
+                        extent=(min(xs), max(xs), min(ys), max(ys)),
+                        aspect='auto',interpolation='nearest',vmin=0,vmax=.1)
+        cb = fig2.colorbar(im)
+        cb.set_label('$\sigma h_z [kpc]$',fontsize='smaller')
+        ax2.set_xlabel('$\Delta R$ [kpc]',fontsize='smaller')
+        ax2.set_ylabel('Age [Gyr]',fontsize='smaller')
+        ax2.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small')
+
+def hz_feh_ofe(s,gridsize=(10,10),rmin=4,rmax=9,ncpu=pynbody.config['number_of_threads']):
     
     fig = plt.figure(figsize=(15,5))
     
@@ -146,8 +157,8 @@ def hz_feh_ofe(s,gridsize=(10,10)):
         
     fehfilt = pynbody.filt.BandPass('feh',-1,.5)
     ofefilt = pynbody.filt.BandPass('ofe', -.3,.3)
-    sn = pynbody.filt.BandPass('rxy',4,9)
-    hist, hz, hr, hzerr, hrerr, xs, ys = iso.get_hz_grid(s.s[fehfilt&ofefilt&sn], 'feh', 'ofe',4,9,0,3,gridsize=gridsize)
+    sn = pynbody.filt.BandPass('rxy',rmin,rmax)
+    hist, hz, hr, hz2,hr2,hzerr, hrerr, xs, ys,fitnum = iso.get_hz_grid_parallel(s.s[fehfilt&ofefilt&sn], 'feh', 'ofe',rmin,rmax,0,3,gridsize=gridsize,ncpu=ncpu)
     
 
 
@@ -156,7 +167,7 @@ def hz_feh_ofe(s,gridsize=(10,10)):
     plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
     im = plt.imshow(hz,origin='lower',
                     extent=(min(xs), max(xs), min(ys), max(ys)),
-                    aspect='auto',vmin=0,vmax=0.6,interpolation='nearest')
+                    aspect='auto',vmin=0,vmax=1.0,interpolation='nearest')
         
     cb = plt.colorbar(im)
     cb.set_label('$h_z [kpc]$',fontsize='smaller')
@@ -308,3 +319,75 @@ def age_deltar_slices(s):
 
     
 
+def hz_jjmax(s,jmin,jmax,jcmin=.5,jcmax=1.0,nbins=10) :
+    import diskfitting
+
+    if 'jz_jzmax' not in s.s.keys(): 
+        iso.get_jzmax(s)
+        s.s['jz_jzmax']=s.s['jz']/s.s['jzmax']
+
+    bins = np.linspace(jcmin,jcmax,nbins+1)
+
+    hrs = np.zeros(nbins)
+    hzs = np.zeros(nbins)
+
+    for i in range(len(bins)-1):
+        ind = np.where((s.s['jz']>jmin)&(s.s['jz']<jmax)&
+                       (s.s['jz_jzmax']>bins[i])&
+                       (s.s['jz_jzmax']<bins[i+1])&
+                       (s.s['delta_j']>500))[0]
+
+        print bins[i],bins[i+1],len(ind)
+
+        if len(ind) > 100:
+            hr,hz,fitnum=diskfitting.two_exp_fit_simple(np.array(s.s['rxy'][ind]),
+                                                        np.array(s.s['z'][ind]),
+                                                        0,20,0,4)
+
+            hrs[i] = hr
+            hzs[i] = hz
+            
+        else:
+            hrs[i]=float('Nan')
+            hzs[i]=float('Nan')
+    
+    plt.plot(.5*(bins[:-1]+bins[1:]),hzs)
+
+
+def hz_deltaj_jc(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['number_of_threads']):
+    
+    fig = plt.figure(figsize=(15,15))
+    fig2 = plt.figure(figsize=(15,15))
+
+    pynbody.analysis.angmom.faceon(s)
+
+    if 'delta_j' not in s.s.keys():
+        iso.get_rform(s.s)
+        s.s['delta_j'] = s.s['jz'] - (s.s['vyform']*s.s['x']-s.s['vxform']*s.s['y'])
+    
+    if 'jzmax' not in s.s.keys():
+        iso.get_jzmax(s)
+        
+    s.s['jz_jzmax'] = s.s['jz']/s.s['jzmax']
+
+    for i,rlims in enumerate([[500,550],[1000,1050],[1200,1250],[1500,1550]]) : 
+        
+        jfilt = pynbody.filt.BandPass('jz',rlims[0],rlims[1])
+#333        djfilt = pynbody.filt.LowPass('delta_j', 10)
+        jzfilt = pynbody.filt.BandPass('jz_jzmax', .9, 1.01)
+        hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum = \
+            iso.get_hz_grid_parallel(s.s[rfilt&drfilt], 'delta_j', 'jz_jzmax', 
+                                     rmin=0,rmax=20,zmin=0,zmax=3,
+                                     gridsize=gridsize,ncpu=ncpu)
+        
+
+        ax = fig.add_subplot(2,2,i+1)
+        ax.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
+        im = ax.imshow(hz,origin='lower',
+                       extent=(min(xs), max(xs), min(ys), max(ys)),
+                       aspect='auto',vmin=vmin,vmax=vmax,interpolation='nearest')
+        cb = fig.colorbar(im)
+        cb.set_label('$h_z [kpc]$',fontsize='smaller')
+        ax.set_xlabel('$\Delta J_z$ [kpc]',fontsize='smaller')
+        ax.set_ylabel('$J/J_z$',fontsize='smaller')
+        ax.set_title('$%d < J_z < %d$'%(rlims[0],rlims[1]), fontsize='small')
