@@ -376,7 +376,7 @@ def hz_deltaj_jc(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['number
 #333        djfilt = pynbody.filt.LowPass('delta_j', 10)
         jzfilt = pynbody.filt.BandPass('jz_jzmax', .9, 1.01)
         hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum = \
-            iso.get_hz_grid_parallel(s.s[rfilt&drfilt], 'delta_j', 'jz_jzmax', 
+            iso.get_hz_grid_parallel(s.s[jfilt], 'delta_j', 'jz_jzmax', 
                                      rmin=0,rmax=20,zmin=0,zmax=3,
                                      gridsize=gridsize,ncpu=ncpu)
         

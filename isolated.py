@@ -452,10 +452,10 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), simplefit=Tr
                         pp.savefig()
                         plt.clf()
                 else: # doing the maximum likelihood fit
-                    hr0, hz0, fitnum = diskfitting.two_exp_fit(s.s[ind],rmin=rmin,rmax=rmax,zmin=zmin,zmax=zmax)
+                    hr0, hz0, fitnum = diskfitting.two_exp_fit(s.s[ind],rmin=rmin,rmax=rmax,zmin=zmin,zmax=zmax,func=diskfitting.negexpsech)
 #                    hrerr0, hzerr0 = diskfitting.mcerrors(s.s[ind],[hr0,hz0],rmin=rmin,
  ###                                                         rmax=rmax,zmin=zmin,zmax=zmax)
-                    hz[j,i] = hz0*2
+                    hz[j,i] = hz0
                     hr[j,i] = hr0
                     hzerr[j,i] = float('Nan')
                     hrerr[j,i] = float('Nan')
@@ -463,7 +463,7 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), simplefit=Tr
                     
                     if plots:
                         prof = VerticalProfile(s.s[ind], 0,20,3.0,nbins=10)
-                        diskfitting.plot_profile(prof,hz0*2,xy=(x,y),units='m_p cm^-3')
+                        diskfitting.plot_sech_profile(prof,hz0/2,xy=(x,y),units='m_p cm^-3')
                         pp.savefig()
                         plt.clf()
 
@@ -529,8 +529,8 @@ def fit_single_profile(a) :
     fitnum = len(ind)    
     
     if fitnum > 100: 
-        hr, hz, fitnum = diskfitting.two_exp_fit_simple(np.array(rxy[ind]),np.array(z[ind]),rmin,rmax,zmin,zmax)
-        hr2, hz2, hrerr, hzerr = diskfitting.mcerrors_simple(np.array(rxy[ind]), np.array(z[ind]), hr, hz, rmin, rmax, zmin, zmax, nwalkers = 6)
+        hr, hz, fitnum = diskfitting.two_exp_fit_simple(np.array(rxy[ind]),np.array(z[ind]),rmin,rmax,zmin,zmax,func=diskfitting.negexpsech)
+        hr2, hz2, hrerr, hzerr = diskfitting.mcerrors_simple(np.array(rxy[ind]), np.array(z[ind]), hr, hz, rmin, rmax, zmin, zmax, nwalkers = 6,func=diskfitting.exp_sech_likelihood)
         
     else : 
         hr = -500
@@ -541,7 +541,7 @@ def fit_single_profile(a) :
         hzerr = float('Nan')
     
 
-    return hr, hz, hr2, hz2, hrerr, hzerr, fitnum
+    return hr, hz/2, hr2, hz2/2, hrerr, hzerr/2, fitnum
 
 #@interruptible
 #def fit_single_errors(a): 

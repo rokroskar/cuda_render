@@ -143,7 +143,7 @@ def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6,func=twoexp_likelih
     
                  
 def plot_sech_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',
-                      title=False,zmin=0.0,zmax=4.0):
+                      title=False,zmin=0.0,zmax=4.0,xy=(0,0)):
     logN = np.log10(profile['density'].in_units(units))
     good = np.isfinite(logN)
     rad = profile['rbins'].in_units('kpc')
@@ -151,12 +151,12 @@ def plot_sech_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',
     if isinstance(zmax, str): zmax=un.Unit(zmax)
 
     # Do simple fit to get normalization
-    expfit = np.polyfit(np.array(rad[good]), np.array(logN[good]), 1)
+#    expfit = np.polyfit(np.array(rad[good]), np.array(logN[good]), 1)
         # 1.0857 is how many magnitudes a 1/e decrease is
     #h=-1.0857/expfit[0]
-    N_0=expfit[1]
-    #N_0 = np.log10(np.sum(profile['density'].in_units(units)) / 
-    #               2.0*hz*(math.tanh(zmax/hz)-math.tanh(zmin/hz)))
+ #   N_0=expfit[1]
+    N_0 = np.log10(np.sum(profile['density'].in_units(units)) / 
+                   2*fith*(math.tanh(zmax/(2*fith))-math.tanh(zmin/(2*fith))))
 
     print "N_0: %g"%N_0
     plt.errorbar(rad[good],logN[good],
@@ -169,9 +169,11 @@ def plot_sech_profile(profile,fith=1.0,outfig=False,units='m_p cm^-2',
     plt.xlabel('distance [kpc]')
     plt.ylabel('log$_{10}$(surface density [$'+pynbody.units.Unit(units).latex()+'$])')
     plt.legend(loc=0)
+    plt.title('x = %.2f y = %.2f'%(xy[0],xy[1]))
+
     if outfig:
         plt.savefig(outfig+'.png')
-    plt.clf()
+    
 
 def plot_profile(profile,fith=1.0,xy=(0,0),outfig=False,units='m_p cm^-2',title=False,
                  rmin='4 kpc',rmax='10 kpc'):
