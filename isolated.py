@@ -91,23 +91,18 @@ def get_rform(sim) :
     sim['posform'] = np.array([sim['xform'],sim['yform'],sim['zform']]).T
     sim['velform'] = np.array([sim['vxform'],sim['vyform'],sim['vzform']]).T
     sim['rform'] = np.sqrt(np.sum(sim['posform'][:,0:2]**2,axis=1))
-
+    sim['jzform'] = sim['xform']*sim['vyform']-sim['vxform']*sim['yform']
 
 def get_jzmax(s) : 
     """
     Calculate the maximum angular momentum given the star's energy
     """
-#    from scipy.interpolate import interp1d
     from scipy import interp
 
     disk = pynbody.filt.Disc('50 kpc', '500 pc')
-
     prof = pynbody.analysis.profile.Profile(s, nbins = 100, type = 'log', min = 0.01, max = 100)
-    
-#    jzmax_interp = interp1d(prof['E_circ'], prof['j_circ'])
-
     s.s['jzmax'] = interp(s.s['te'], prof['E_circ'], prof['j_circ'])
-    
+    s.s['jz/jc'] = s.s['jz']/s.s['jzmax']
     
     
 def get_cofm(dir='./', filepattern='*/*.0????') : 
@@ -477,7 +472,7 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), simplefit=Tr
     return hist, hz, hr, float('Nan'), float('Nan'),hzerr, hrerr, xs, ys, num
 
 def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), 
-                         ncpu = int(pynbody.config['number_of_threads'])):
+                         ncpu = int(pynbody.config['number_of_threads']), form = 'sech', get_errors = False):
     from parallel_util import run_parallel, interruptible
     
     hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
@@ -503,7 +498,7 @@ def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10),
     # get the fit
  
     res = np.array(run_parallel(fit_single_profile, list(points), 
-                                [x,y,rxy,z,dx,dy,rmin,rmax,zmin,zmax], processes=ncpu))
+                                [x,y,rxy,z,dx,dy,rmin,rmax,zmin,zmax,form,get_errors], processes=ncpu))
 
     hr = res[:,0].reshape(gridsize).T
     hz = res[:,1].reshape(gridsize).T
@@ -518,7 +513,14 @@ def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10),
 
 @interruptible
 def fit_single_profile(a) : 
-    point, x, y, rxy, z, dx, dy, rmin, rmax, zmin, zmax = a
+    point, x, y, rxy, z, dx, dy, rmin, rmax, zmin, zmax, form, get_errors = a
+
+    if form == 'sech' : 
+        func = diskfitting.negexpsech
+        errfunc = diskfitting.exp_sech_likelihood
+    else : 
+        func = diskfitting.neg2expl
+        errfunc = diskfitting.twoexp_likelihood
     
     px,py = point
     print 'point = ', point
@@ -529,19 +531,32 @@ def fit_single_profile(a) :
     fitnum = len(ind)    
     
     if fitnum > 100: 
-        hr, hz, fitnum = diskfitting.two_exp_fit_simple(np.array(rxy[ind]),np.array(z[ind]),rmin,rmax,zmin,zmax,func=diskfitting.negexpsech)
-        hr2, hz2, hrerr, hzerr = diskfitting.mcerrors_simple(np.array(rxy[ind]), np.array(z[ind]), hr, hz, rmin, rmax, zmin, zmax, nwalkers = 6,func=diskfitting.exp_sech_likelihood)
+        hr, hz, fitnum = diskfitting.two_exp_fit_simple(np.array(rxy[ind]),np.array(z[ind]),rmin,rmax,zmin,zmax,func=func)
+#        hz = np.median(np.abs(z[ind]))
+        hr = float('Nan')
         
+        if get_errors: 
+            hr2, hz2, hrerr, hzerr = diskfitting.mcerrors_simple(np.array(rxy[ind]), np.array(z[ind]), 
+                                                                 hr, hz, rmin, rmax, zmin, zmax, nwalkers = 6,func=errfunc)
+        else : 
+            hz2 = float('Nan')
+            hr2 = float('Nan')
+            hzerr = float('Nan')
+            hrerr = float('Nan')
     else : 
-        hr = -500
-        hz = -500
-        hr2 = -500
-        hz2 = -500
+        hr = float('Nan')
+        hz = float('Nan')
+        hr2 = float('Nan')
+        hz2 = float('Nan')
         hrerr = float('Nan')
         hzerr = float('Nan')
     
+    if form == 'sech': 
+        hz /= 2.0
+        hz2 /= 2.0
+        hzerr /= 2.0
 
-    return hr, hz/2, hr2, hz2/2, hrerr, hzerr/2, fitnum
+    return hr, hz, hr2, hz2, hrerr, hzerr, fitnum
 
 #@interruptible
 #def fit_single_errors(a): 
@@ -576,3 +591,36 @@ def get_vdisp_grid(s,varx,vary,gridsize=(10,10)) :
                 vdisp_z_i[j,i] = np.std(s.s['vzform'][ind])
 
     return hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys
+
+def plot_2D_grid(s, varx, vary, varz, gridsize=(10,10)) : 
+
+    """
+    Produces a 2D plot binning the property varz on a grid specified
+    by varx and vary.
+
+    """
+
+
+
+    hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
+                                               make_plot=False,gridsize=gridsize)
+
+    dx = xs[1] - xs[0]
+    dy = ys[1] - ys[0]
+
+    zvals = np.zeros(gridsize)*np.float('Nan')
+
+    for i,x in enumerate(xs) : 
+        for j,y in enumerate(ys) : 
+            ind = np.where((s.s[varx] > x - dx/2) & (s.s[varx] < x + dx/2) & 
+                           (s.s[vary] > y - dy/2) & (s.s[vary] < y + dy/2))[0]
+            
+            print i,j,len(ind)
+            if len(ind) > 100 : 
+                
+                zrms[j,i] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
+                zrms_i[j,i] = np.sqrt((s.s['zform'][ind]**2).sum()/len(ind))
+            
+            else : 
+                zrms[j,i] = -500
+    return hist, zrms, zrms_i, xs, ys
