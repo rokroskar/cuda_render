@@ -57,12 +57,12 @@ def get_rform(sim) :
         while hasattr(up,'base') : up = up.base
 
     
-    try: 
-        for arr in ['x','y','z'] : 
-            del(up[arr+'form'])
+#    try: 
+#        for arr in ['x','y','z'] : 
+#            del(up[arr+'form'])
             
-    except KeyError: 
-        pass
+#    except KeyError: 
+#        pass
 
     try : 
         sim['posform']
@@ -362,7 +362,7 @@ def plot_profile_fit(filename, merger, rmin=3, rmax=6) :
     print fit, chsq
     plt.semilogy()
 
-def get_zrms_grid(s,varx,vary,rmin,rmax,zmin,zmax) :
+def get_zrms_grid(s,varx,vary,rmin,rmax,zmin,zmax,gridsize=(20,20)) :
     """
     Produces z_rms values on a grid specified by varx and vary
 
@@ -371,13 +371,13 @@ def get_zrms_grid(s,varx,vary,rmin,rmax,zmin,zmax) :
     s.s['dr'] = s.s['rxy']-s.s['rform']
 
     hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
-                                               make_plot=False,gridsize=(20,20))
+                                               make_plot=False,gridsize=gridsize)
 
     dx = xs[1] - xs[0]
     dy = ys[1] - ys[0]
 
-    zrms = np.zeros((len(xs),len(ys)))
-    zrms_i = np.zeros((len(xs),len(ys)))
+    zrms = np.zeros((len(xs),len(ys)))*float('Nan')
+    zrms_i = np.zeros((len(xs),len(ys)))*float('Nan')
     for i,x in enumerate(xs) : 
         for j,y in enumerate(ys) : 
             ind = np.where((s.s[varx] > x - dx/2) & (s.s[varx] < x + dx/2) & 
@@ -572,24 +572,23 @@ def get_vdisp_grid(s,varx,vary,gridsize=(10,10)) :
     dx = xs[1] - xs[0]
     dy = ys[1] - ys[0]
 
-    vdisp_r = np.zeros((len(xs),len(ys)))
-    vdisp_z = np.zeros((len(xs),len(ys)))
+    vdisp_r = np.zeros((len(xs),len(ys)))*float('Nan')
+    vdisp_z = np.zeros((len(xs),len(ys)))*float('Nan')
 
-    vdisp_r_i = np.zeros((len(xs),len(ys)))
-    vdisp_z_i = np.zeros((len(xs),len(ys)))
+    vdisp_r_i = np.zeros((len(xs),len(ys)))*float('Nan')
+    vdisp_z_i = np.zeros((len(xs),len(ys)))*float('Nan')
 
     for i,x in enumerate(xs) : 
         for j,y in enumerate(ys) : 
             ind = np.where((s.s[varx] > x - dx/2) & (s.s[varx] < x + dx/2) & 
                            (s.s[vary] > y - dy/2) & (s.s[vary] < y + dy/2))[0]
             
-            print i,j,len(ind)
             if len(ind) > 100 : 
                 
                 vdisp_r[j,i] = np.std(s.s['vr'][ind])
                 vdisp_z[j,i] = np.std(s.s['vz'][ind])
                 vdisp_z_i[j,i] = np.std(s.s['vzform'][ind])
-
+            
     return hist, vdisp_r, vdisp_z, vdisp_z_i, xs, ys
 
 def plot_2D_grid(s, varx, vary, varz, gridsize=(10,10)) : 

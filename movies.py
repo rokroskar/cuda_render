@@ -31,6 +31,8 @@ def make_rotating_movie(sim,nframes,x2=100, fileprefix = 'rotating', noticks = T
 
 
 
+        
+
 def combine_frames(pref1, pref2, outpref) : 
     
     import glob

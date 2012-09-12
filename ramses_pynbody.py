@@ -58,3 +58,27 @@ def write_paramfile(stepnum):
 if __name__ == '__main__':
     make_gas_map(load_ramses(int(sys.argv[1])))
 
+
+def hop_center(s):
+
+    filename = 'hop/grp%s.pos'%s.filename[-5:]
+    data = np.genfromtxt(filename,unpack=True)
+    cen = data.T[0][4:7]
+    vcen = data.T[0][7:10]
+    
+    s['pos'] -= cen
+    s['vel'] -= vcen
+    
+
+
+def make_pretty_picture(outputname):
+    from cosmo_plots import make_multiple_snapshot_images
+    s = pynbody.load(outputname)
+    s['mass']
+    hop_center(s)
+    s.physical_units()
+    st = s[pynbody.filt.Sphere(120)]
+    make_multiple_snapshot_images([st],100,vgmin=6)
+
+    
+    return s, st

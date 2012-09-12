@@ -63,9 +63,9 @@ def vdisp_deltar(s) :
 
     return vdisp_r, vdisp_z, hist, xs, ys
 
-def zrms_deltar_rform(s):
+def zrms_deltar_rform(s,gridsize=(20,20)):
     
-    fig = plt.figure(figsize=(15,15))
+    fig = plt.figure(figsize=(13,15))
     
     pynbody.analysis.angmom.faceon(s)
 
@@ -76,26 +76,34 @@ def zrms_deltar_rform(s):
         
         rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
         drfilt = pynbody.filt.LowPass('dr', 10)
-        hist, zrms, zrms_i, xs, ys = iso.get_zrms_grid(s.s[rfilt&drfilt])
+        hist, zrms, zrms_i, xs, ys = iso.get_zrms_grid(s.s[rfilt&drfilt], 'dr', 'age', 
+                                                       rmin = 0, rmax = 20, zmin = 0, zmax= 3,
+                                                       gridsize=gridsize)
         
         ax = fig.add_subplot(2,2,i+1)
 
         plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
 
         im = plt.imshow(zrms-zrms_i,origin='lower',extent=(min(xs),max(xs),min(ys),max(ys)),
-                        aspect='auto',vmin=-.5,vmax=1.5,interpolation='nearest')
+                        aspect='auto',vmin=-.2,vmax=1.,interpolation='nearest')
         
-        cb = plt.colorbar(im)
-        cb.set_label('$\Delta z_{rms}$ [kpc]')
-        
+        ax.set_xlabel('$\Delta R$ [kpc]',fontsize='smaller')
+        ax.set_ylabel('Age [Gyr]',fontsize='smaller')
+              
         plt.xlabel('$\Delta R$ [kpc]')
         plt.ylabel('Age [Gyr]')
         
-        plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]))
+        ax.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small')
+
+    cbax = fig.add_axes([0.91,0.1,0.02,0.8])
+    cb1 = fig.colorbar(im,cax=cbax)
+    cb1.set_label('$\Delta z_{rms} \mathrm{~[kpc]}$',fontsize='smaller')
+    for tick in cb1.ax.get_yticklabels() :
+        tick.set_fontsize('smaller')
 
 def hz_deltar_rform(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['number_of_threads'], form = 'sech', get_errors = False):
     
-    fig = plt.figure(figsize=(15,15))
+    fig = plt.figure(figsize=(13,15))
     pynbody.analysis.angmom.faceon(s)
 
     if 'rform' not in s.s.keys():
@@ -128,9 +136,11 @@ def hz_deltar_rform(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['num
         ax.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small')
 
 
-        cbax = fig.add_axes([0.92,0.17,0.02,0.7])
-        cb1 = fig.colorbar(im,cax=cbax)
-        cb1.set_label('h_z [kpc]')
+    cbax = fig.add_axes([0.91,0.1,0.02,0.8])
+    cb1 = fig.colorbar(im,cax=cbax)
+    cb1.set_label('$h_z \mathrm{~[kpc]}$')
+    for tick in cb1.ax.get_yticklabels() :
+        tick.set_fontsize('smaller')
 
         if get_errors:
         # plotting the errors
@@ -186,7 +196,7 @@ def hz_deltaj_rform(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['num
         ax.set_title('$%d < J_{z,form} < %d$'%(rlims[0],rlims[1]), fontsize='small')
         cbax = fig.add_axes([0.91,0.17,0.02,0.7])
         cb1 = fig.colorbar(im,cax=cbax)
-        cb1.set_label('h_z [kpc]')
+        cb1.set_label('$h_z \mathrm{~[kpc]}$')
 
 
         if get_errors:
@@ -326,9 +336,9 @@ def zrms_deltar_rfinal(s):
         
         plt.title('$%d < R_{final} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]))
 
-def vdisp_deltar_rform(s,gridsize=(10,10),vmin=0,vmax=70):
+def vdisp_deltar_rform(s,gridsize=(20,20),vmin=0,vmax=70):
     
-    fig = plt.figure(figsize=(15,15))
+    fig = plt.figure(figsize=(13,15))
     
     pynbody.analysis.angmom.faceon(s)
 
@@ -349,14 +359,16 @@ def vdisp_deltar_rform(s,gridsize=(10,10),vmin=0,vmax=70):
         im = plt.imshow(vdisp_z,origin='lower',extent=(min(xs),max(xs),min(ys),max(ys)),
                         aspect='auto',interpolation='nearest',vmin=vmin,vmax=vmax)
         
-        cb = plt.colorbar(im)
-        cb.set_label('$\sigma_z$ [km/s]', fontsize='smaller')
-        
         plt.xlabel('$\Delta R$ [kpc]',fontsize='smaller')
         plt.ylabel('Age [Gyr]',fontsize='smaller')
         
         plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]),fontsize='small')
 
+    cbax = fig.add_axes([0.91,0.1,0.02,0.8])
+    cb1 = fig.colorbar(im,cax=cbax)
+    cb1.set_label('$\sigma_z \mathrm{~[km/s]}$',fontsize='smaller')
+    for tick in cb1.ax.get_yticklabels() :
+        tick.set_fontsize('smaller')
 
 def vdisp_deltar_rfinal(s):
     
@@ -498,10 +510,15 @@ def hz_deltaj_jc(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['number
         ax.set_ylabel('$J/J_z$',fontsize='smaller')
         ax.set_title('$%d < J_z < %d$'%(rlims[0],rlims[1]), fontsize='small')
 
+def pos_expo(x,p) : 
+    return p[0]*np.exp(x/p[1])
 
-def hz_deltaj_fixed(s,jmin,jmax,agemin,agemax) : 
+def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) : 
     from pynbody.filt import BandPass
     from pynbody.analysis.profile import Profile
+    from fitting import expo
+    from scipy import optimize
+    
 
     # set up filters
     
@@ -509,22 +526,102 @@ def hz_deltaj_fixed(s,jmin,jmax,agemin,agemax) :
     jformfilt = BandPass('jzform',jmin,jmax)
     agefilt = BandPass('age',agemin,agemax)
 
-    f, ax = plt.subplots(1,2,figsize=(15,6))
+    f, ax = plt.subplots(1,3,figsize=(24,6))
 
-    for jcrange in [[.85,.9],[.9,.95],[.95,1.0]] : 
+    fitfunc = lambda p, x : p[0]*np.exp(x/p[1])
+    errfunc = lambda p, x, y, err : (y-fitfunc(p,x))/err
+
+    colors = ['b','g','r']
+
+    for j, jcrange in enumerate([[.85,.9],[.9,.95],[.95,1.0]]) : 
 
         jcfilt = BandPass('jz/jc', jcrange[0],jcrange[1])
         
-        for i, filt in enumerate([agefilt & jcfilt & jfilt, agefilt & jcfilt & jformfilt]) : 
+        filt = agefilt & jcfilt & jfilt
 
-            if filt.where(s.s)[0].size > 0: 
-                p = Profile(s.s[filt], calc_x=lambda x: x['delta_j'], min = s.s[filt]['delta_j'].min(), nbins=10)
-                ax[i].plot(p['rbins'],p['z_disp']/p['zform_disp'],label="$%.2f < J_z/J_c < %.2f$"%(jcrange[0],jcrange[1]))
-                ax[i].set_xlabel('$\Delta J_z$')
-                ax[i].set_ylabel('$z_{rms}$')
+        if filt.where(s.s)[0].size > 0: 
+            p = Profile(s.s[filt], calc_x=lambda x: x['delta_j'], min = s.s[filt]['delta_j'].min(), nbins=10)
+            ax[0].plot(p['rbins']/1e3,p['z_rms']/p['zform_rms'],
+                       label="$%.2f < j_z/j_c < %.2f$"%(jcrange[0],jcrange[1]),color=colors[j])
+            ax[0].set_xlabel('$\Delta j_z~[10^{3} \mathrm{~kpc~km~s^{-1}}]$')
+            ax[0].set_ylabel('$z_{rms}/z_{form_{rms}}$')
+            
+            ax[1].plot(p['rbins']/1e3,p['zform_rms'])
+            ax[1].set_xlabel('$\Delta j_z~[10^{3} \mathrm{~kpc~km~s^{-1}}]$')
+            ax[1].set_ylabel('$z_{form_{rms}}~[\mathrm{kpc}]$')
+
+            ax[2].plot(p['rbins']/1e3,p['z_rms'])
+            ax[2].set_xlabel('$\Delta j_z~[10^{3} \mathrm{~kpc~km~s^{-1}}]$')
+            ax[2].set_ylabel('$z_{rms}~[\mathrm{kpc}]$')
+
+
+
+                # fit
+               # p1, res = optimize.leastsq(errfunc,[1.0,1000], args=(np.array(p['rbins']),
+               #                                                      np.array(p['z_rms']/p['zform_rms']),
+               #                                                      np.array(p['z_rms']/p['zform_rms']/np.sqrt(p['n']))))
+               # print p1, res
+               # x = np.linspace(p['rbins'].min(),p['rbins'].max(),100)
+               # ax[i].plot(x,fitfunc(p1,x),'%s--'%colors[j])
+
                 
-    ax[0].set_title('$%d < J_{final} < %d$'%(jmin,jmax))
-    ax[1].set_title('$%d < J_{form} < %d$'%(jmin,jmax))
+                
+                
+    ax[1].set_title('$%d < j_{final} < %d$'%(jmin,jmax))
+    ax[0].legend(loc=0,prop=dict(size='small'))
+
+    
+
+def make_zrms_jform_fig(s,jmin,jmax,agemin,agemax) : 
+    from pynbody.filt import BandPass
+    from pynbody.analysis.profile import Profile
+    from fitting import expo
+    from scipy import optimize, interp
+    
+
+    # set up filters
+    
+    jfilt = BandPass('jz',jmin,jmax)
+    jformfilt = BandPass('jzform',jmin,jmax)
+    agefilt = BandPass('age',agemin,agemax)
+
+    f = plt.figure()
+
+    fitfunc = lambda p, x : p[0]*np.exp(x/p[1])
+    errfunc = lambda p, x, y, err : (y-fitfunc(p,x))/err
+
+    colors = ['b','g','r']
+
+    for j, jcrange in enumerate([[.85,.9],[.9,.95],[.95,1.0]]) : 
+
+        jcfilt = BandPass('jz/jc', jcrange[0],jcrange[1])
+        
+        filt = agefilt & jcfilt & jformfilt
+
+        if filt.where(s.s)[0].size > 0: 
+            p = Profile(s.s[filt], calc_x=lambda x: x['delta_j'], min = s.s[filt]['delta_j'].min(), nbins=10)
+            plt.plot(p['rbins']/1e3,p['z_rms']/p['zform_rms'],
+                     label="$%.2f < j_z/j_c < %.2f$"%(jcrange[0],jcrange[1]),color=colors[j])
+            
+            plt.xlabel('$\Delta j_z~[10^3~\mathrm{kpc~km~s^{-1}}]$')
+            plt.ylabel('$z_{rms}/z_{form_{rms}}$')
+
+    # fit
+                    
+    x = np.linspace(p['rbins'].min(),p['rbins'].max(),100)
+    p1, res = optimize.leastsq(errfunc,[1.0,1000], args=(np.array(p['rbins']),
+                                                         np.array(p['z_rms']/p['zform_rms']),
+                                                         np.array(p['z_rms']/p['zform_rms']/np.sqrt(p['n']))))
+                
+    plt.plot(x/1e3,fitfunc(p1,x),'r--')
+
+    for alpha in [0.5,1.0,2.0]:
+        y = interp(0,p['delta_j'],p['z_rms']/p['zform_rms'])*np.exp(x/(625.0*(2+alpha)))
+        plt.plot(x/1e3,y,'k--')
+        plt.annotate(r'%.1f'%alpha, (x[-1]/1e3+.01, y[-1]),fontsize=12)
+        
+    plt.title('$%d < j_{form} < %d$'%(jmin,jmax))
 
     plt.legend(loc=0,prop=dict(size='small'))
 
+    

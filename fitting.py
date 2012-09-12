@@ -14,7 +14,7 @@ def sech(x) :
     return 1/np.cosh(x)
 
 def sech2(x,p) : 
-    return p[0]*sech(-x/p[1])**2
+    return p[0]*sech(-x/(2*p[1]))**2
 
 def expo(x,p) : 
     return p[0]*np.exp(-x/p[1])

@@ -4,7 +4,7 @@ import numpy as np
 from functools import wraps
 
 def run_parallel(func, single_args, repeat_args, 
-                 processes=int(pynbody.config['number_of_threads']), test = False) : 
+                 processes=int(pynbody.config['number_of_threads'])) : 
     """
     
     Run a function in parallel using the python multiprocessing module. 
@@ -75,7 +75,7 @@ def run_parallel(func, single_args, repeat_args,
         for arg in repeat_args: 
             args.append(itertools.repeat(arg))
     
-    if test : 
+    if processes==1 : 
         res = map(func, itertools.izip(single_args, *args))
 
     else : 
