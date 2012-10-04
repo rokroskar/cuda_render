@@ -517,7 +517,7 @@ def hz_deltaj_jc(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['number
 def pos_expo(x,p) : 
     return p[0]*np.exp(x/p[1])
 
-def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) : 
+def make_zrms_jfinal_fig(s,rgmin,rgmax,agemin,agemax) : 
     from pynbody.filt import BandPass
     from pynbody.analysis.profile import Profile
     from fitting import expo
@@ -526,8 +526,7 @@ def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) :
 
     # set up filters
     
-    jfilt = BandPass('jz',jmin,jmax)
-    jformfilt = BandPass('jzform',jmin,jmax)
+    rgfilt = BandPass('Rg',rgmin,rgmax)
     agefilt = BandPass('age',agemin,agemax)
 
     f, ax = plt.subplots(1,3,figsize=(24,6))
@@ -537,24 +536,30 @@ def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) :
 
     colors = ['b','g','r']
 
+    s.s['Rg'] = s.s['jz']/250.0
+
     for j, jcrange in enumerate([[.85,.9],[.9,.95],[.95,1.0]]) : 
 
         jcfilt = BandPass('jz/jc', jcrange[0],jcrange[1])
         
-        filt = agefilt & jcfilt & jfilt
+        filt = agefilt & jcfilt & rgfilt
 
         if filt.where(s.s)[0].size > 0: 
+
             p = Profile(s.s[filt], calc_x=lambda x: x['delta_j']/250., min = (s.s[filt]['delta_j']/250.).min(), nbins=10)
-            ax[0].plot(p['rbins'],p['z_rms']/p['zform_rms'],
+
+            good = np.where(p['n']>100)
+
+            ax[0].plot(p['rbins'][good],(p['z_rms']/p['zform_rms'])[good],
                        label="$%.2f < j_z/j_c < %.2f$"%(jcrange[0],jcrange[1]),color=colors[j])
             ax[0].set_xlabel('$\Delta R_g~[\mathrm{kpc}]$')
             ax[0].set_ylabel('$z_{rms}/z_{i,rms}$')
             
-            ax[1].plot(p['rbins'],p['zform_rms'])
+            ax[1].plot(p['rbins'][good],p['zform_rms'][good])
             ax[1].set_xlabel('$\Delta R_g~[\mathrm{kpc}]$')
             ax[1].set_ylabel('$z_{i,rms}~[\mathrm{kpc}]$')
 
-            ax[2].plot(p['rbins'],p['z_rms'])
+            ax[2].plot(p['rbins'][good],p['z_rms'][good])
             ax[2].set_xlabel('$\Delta R_g~[\mathrm{kpc}]$')
             ax[2].set_ylabel('$z_{rms}~[\mathrm{kpc}]$')
 
@@ -571,7 +576,7 @@ def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) :
                 
                 
                 
-    ax[1].set_title('$%d < j_{final} < %d$'%(jmin,jmax))
+    ax[1].set_title('$%.1f < R_g < %.1f$'%(rgmin,rgmax))
     ax[0].legend(loc=0,prop=dict(size='small'))
 
     
