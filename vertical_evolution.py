@@ -576,7 +576,7 @@ def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) :
 
     
 
-def make_zrms_jform_fig(s,rmin,rmax,agemin,agemax) : 
+def make_zrms_jform_fig(s,agemin,agemax) : 
     from pynbody.filt import BandPass
     from pynbody.analysis.profile import Profile
     from fitting import expo
@@ -585,49 +585,54 @@ def make_zrms_jform_fig(s,rmin,rmax,agemin,agemax) :
 
     # set up filters
     
-    rformfilt = BandPass('rform',rmin,rmax)
+
     agefilt = BandPass('age',agemin,agemax)
 
-    f = plt.figure()
+    f,axs = plt.subplots(1,3,figsize=(24,6))
 
     fitfunc = lambda p, x : p[0]*np.exp(x/p[1])
     errfunc = lambda p, x, y, err : (y-fitfunc(p,x))/err
 
     colors = ['b','g','r']
+    
+    for i, (rmin, rmax) in enumerate([[4,4.5],[5,5.5],[6,6.5]]) : 
+        rformfilt = BandPass('rform',rmin,rmax)
+        ax = axs[i]
+        for j, jcrange in enumerate([[.85,.9],[.9,.95],[.95,1.0]]) : 
 
-    for j, jcrange in enumerate([[.85,.9],[.9,.95],[.95,1.0]]) : 
-
-        jcfilt = BandPass('jz/jc', jcrange[0],jcrange[1])
+            jcfilt = BandPass('jz/jc', jcrange[0],jcrange[1])
         
-        filt = agefilt & jcfilt & rformfilt
+            filt = agefilt & jcfilt & rformfilt
 
-        if filt.where(s.s)[0].size > 0: 
-            p = Profile(s.s[filt], calc_x=lambda x: x['delta_j']/250., min = (s.s[filt]['delta_j']/250.).min(), nbins=10)
+            if filt.where(s.s)[0].size > 0: 
+                p = Profile(s.s[filt], calc_x=lambda x: x['delta_j']/250., min = (s.s[filt]['delta_j']/250.).min(), nbins=10)
 
-            good = np.where(p['n'] > 100)[0]
-            plt.plot(p['rbins'][good],(p['z_rms']/p['zform_rms'])[good],
-                     label="$%.2f < j_z/j_c < %.2f$"%(jcrange[0],jcrange[1]),color=colors[j])
+                good = np.where(p['n'] > 100)[0]
+                ax.plot(p['rbins'][good],(p['z_rms']/p['zform_rms'])[good],
+                         label="$%.2f < j_z/j_c < %.2f$"%(jcrange[0],jcrange[1]),color=colors[j])
             
-            plt.xlabel('$\Delta R_g$ [kpc]')
-            plt.ylabel('$z_{rms}/z_{i,rms}$')
+                ax.set_xlabel('$\Delta R_g$ [kpc]')
+                ax.set_ylabel('$z_{rms}/z_{i,rms}$')
 
     # fit
                     
-    x = np.linspace(p['rbins'][good].min(),p['rbins'][good].max(),100)
-    p1, res = optimize.leastsq(errfunc,[1.0,1.0], args=(np.array(p['rbins']),
-                                                         np.array(p['z_rms']/p['zform_rms']),
-                                                         np.array(p['z_rms']/p['zform_rms']/np.sqrt(p['n']))))
+        x = np.linspace(p['rbins'][good].min(),p['rbins'][good].max(),100)
+        p1, res = optimize.leastsq(errfunc,[1.0,1.0], args=(np.array(p['rbins']),
+                                                            np.array(p['z_rms']/p['zform_rms']),
+                                                            np.array(p['z_rms']/p['zform_rms']/np.sqrt(p['n']))))
                 
-    plt.plot(x,fitfunc(p1,x),'r--')
-    colors = ['orange','blue','green']
+        ax.plot(x,fitfunc(p1,x),'r--')
+        colors2 = ['orange','blue','green']
 
-    for i, alpha in enumerate([0.5,1.0,2.0]):
-        y = interp(0,p['delta_j']/250.,p['z_rms']/p['zform_rms'])*np.exp(x/(2.5*(2+alpha)))
-        plt.plot(x,y,color=colors[i],linestyle='--')
-        plt.annotate(r'%.1f'%alpha, (x[-1]+.01, y[-1]),fontsize=12,color=colors[i])
+        for k, alpha in enumerate([0.5,1.0,2.0]):
+            y = interp(0,p['delta_j']/250.,p['z_rms']/p['zform_rms'])*np.exp(x/(2.5*(2+alpha)))
+            ax.plot(x,y,color=colors2[k],linestyle='--')
+            ax.annotate(r'%.1f'%alpha, (x[-1]+.01, y[-1]),fontsize=12,color=colors2[k])
         
-    plt.title('$%.1f < R_{form} \mathrm{~[kpc]}< %.1f$'%(rmin,rmax))
-
-    plt.legend(loc=0,prop=dict(size='small'))
+            ax.set_title('$%.1f < R_{form} \mathrm{~[kpc]}< %.1f$'%(rmin,rmax),fontsize='small')
+        
+        ax.set_xlim(-3.5,5.5)
+        if i ==0 : ax.legend(loc=0,prop=dict(size='small'))
 
     
+        
