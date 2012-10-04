@@ -62,10 +62,12 @@ def quick_plots(sim):
     pyn.plot.rho_T(sim.g, clear = False, t_range = [1,7], rho_range = [-7,10])
 
 
-def smbh_orbits(output=False, processes = 5, test=False):
+def smbh_orbits(dir = './', output=False, processes = 5, test=False):
     import glob, orbits
 
-    flist = glob.glob('*/*.0????')
+    if dir[-1] != '/' : dir += '/'
+
+    flist = glob.glob(dir+'*/*.0????')
     flist.sort(key=lambda x: x[-5:])
     print flist[0:10]
 
@@ -92,27 +94,40 @@ def smbh_orbits(output=False, processes = 5, test=False):
 
     return t, r, pos
 
-def filelist() : 
+def filelist(path='./', pattern = '?/*.00???') : 
     import glob
     import sys
+    
+    if path[-1] != '/' : path += '/'
 
-    flist = glob.glob('?/*.00???')
+    flist = glob.glob(path+pattern)
     flist.sort()
 
+#    outfile = open('filelist', 'w')
+    
+    names = []
+    times = []
+    
     for f in flist : 
         stemp = pyn.load(f,only_header=True)
         print>>sys.stderr, f, stemp.properties['time'].in_units('Myr')
+        names.append(f)
+        times.append(stemp.properties['time'].in_units('Myr'))
 
+    np.savez(path+'filelist', names = names, times = times)
 
-def central_gas(path, radius=0.5, fig = None) :
+def central_mass(path, radius=0.5, fig = None) :
     import glob
 
     if path[-1] is not "/" : path = path+"/"
 
-    flist = glob.glob(path+"*.00???")
-    flist.sort()
+    flist = glob.glob(path+"*.0????")
+    flist.sort(key=lambda x: x[-5:])
+    print path
+    print flist
 
-    cen_mass = pyn.array.SimArray(np.empty(len(flist),dtype='float'),'Msol')
+    cen_mass_g = pyn.array.SimArray(np.empty(len(flist),dtype='float'),'Msol')
+    cen_mass_s = pyn.array.SimArray(np.empty(len(flist),dtype='float'),'Msol')
     time = pyn.array.SimArray(np.empty(len(flist),dtype='float'),'Gyr')
 
     for i, filename in enumerate(flist) : 
@@ -122,18 +137,20 @@ def central_gas(path, radius=0.5, fig = None) :
         sph1 = pyn.filt.Sphere(radius,s[bhind[0]]['pos'].flatten())
         sph2 = pyn.filt.Sphere(radius,s[bhind[1]]['pos'].flatten())
         
-        cen_mass[i] = s[sph1 or sph2].g['mass'].sum().in_units('Msol')
-        time[i] = s.properties['time'].in_units('Gyr')
+        cen_mass_g[i] = s[sph1 or sph2].g['mass'].sum().in_units('Msol')
+        cen_mass_s[i] = s[sph1 or sph2].s['mass'].sum().in_units('Msol')
+        time[i] = s.properties['time'].in_units('Myr')
         
     if fig is None : 
         fig = plt.figure()
-        plt.xlabel('time [Gyr]')
+        plt.xlabel('time [Myr]')
         plt.ylabel('mass $M_{\odot}$')
 
-    plt.plot(time,cen_mass.in_units('Msol'))
+    plt.plot(time,cen_mass_g.in_units('Msol'),label='gas')
+    plt.plot(time,cen_mass_s.in_units('Msol'),label='stars')
     
         
-    return time,cen_mass
+    return time,cen_mass_g, cen_mass_s
 
 
 def plot_sequence() : 
@@ -235,3 +252,43 @@ def overplot_clump_centers(s,clumps,rmax,massmin) :
     plt.ylim(-rmax,rmax)
 
     
+def nearest_output(time, dir = './') : 
+    if dir[-1] != '/' : dir += '/'
+
+    try : 
+        flist = np.load(dir+'filelist.npz')
+    except IOError: 
+        filelist()
+        flist = np.load(dir+'filelist.npz')
+
+        
+    time = np.array(time)
+
+
+    if len(time.shape) == 0 : 
+        return flist['names'][np.abs(flist['times'] - time).argmin()]
+    else : 
+        res = []
+        for t in time : 
+            res.append(flist['names'][np.abs(flist['times'] - t).argmin()])
+        return res
+
+
+    
+def plot_orbit(dir='./', ax = None): 
+    if dir[-1] != '/' : dir += '/'
+
+
+    try : 
+        data = np.load(dir+'bh_orbit.npz')
+    except IOError : 
+        smbh_orbits(dir)
+        data = np.load(dir+'bh_orbit.npz')
+
+    if ax is None : 
+        fig, ax = plt.subplots()
+
+    ax.plot(data['t'], data['r']*1e3)
+    ax.set_xlabel('t [Myr]')
+    ax.set_ylabel('separation [pc]')
+    ax.semilogy()

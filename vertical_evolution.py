@@ -179,15 +179,19 @@ def hz_deltaj_rform(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['num
         rfilt = pynbody.filt.BandPass('jzform',rlims[0],rlims[1])
         drfilt = pynbody.filt.LowPass('dr', 10)
         jzfilt = pynbody.filt.BandPass('jz/jc', .95, 1.01)
-        hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum = \
-            iso.get_hz_grid_parallel(s.s[rfilt], 'delta_j', 'age', 
-                                     rmin=0,rmax=20,zmin=0,zmax=3,
-                                     gridsize=gridsize,ncpu=ncpu,form='sech')
+#        hist, hz, hr, hz2, hr2, hzerr, hrerr, xs, ys, fitnum = \
+#            iso.get_hz_grid_parallel(s.s[rfilt], 'delta_j', 'age', 
+ #                                    rmin=0,rmax=20,zmin=0,zmax=3,
+  # gridsize=gridsize,ncpu=ncpu,form='sech')
+        
+        hist, zrms, zrms_i, xs, ys = iso.get_zrms_grid(s.s[rfilt&drfilt], 'delta_j', 'age', 
+                                                       rmin = 0, rmax = 20, zmin = 0, zmax= 3,
+                                                       gridsize=gridsize)
         
 
         ax = fig.add_subplot(2,2,i+1)
         ax.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
-        im = ax.imshow(hz,origin='lower',
+        im = ax.imshow(zrms-zrms_i,origin='lower',
                        extent=(min(xs), max(xs), min(ys), max(ys)),
                        aspect='auto',vmin=vmin,vmax=vmax,interpolation='nearest')
         
@@ -196,7 +200,7 @@ def hz_deltaj_rform(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['num
         ax.set_title('$%d < J_{z,form} < %d$'%(rlims[0],rlims[1]), fontsize='small')
         cbax = fig.add_axes([0.91,0.17,0.02,0.7])
         cb1 = fig.colorbar(im,cax=cbax)
-        cb1.set_label('$h_z \mathrm{~[kpc]}$')
+        cb1.set_label('$\Delta z_{rms} \mathrm{~[kpc]}$')
 
 
         if get_errors:
@@ -540,18 +544,18 @@ def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) :
         filt = agefilt & jcfilt & jfilt
 
         if filt.where(s.s)[0].size > 0: 
-            p = Profile(s.s[filt], calc_x=lambda x: x['delta_j'], min = s.s[filt]['delta_j'].min(), nbins=10)
-            ax[0].plot(p['rbins']/1e3,p['z_rms']/p['zform_rms'],
+            p = Profile(s.s[filt], calc_x=lambda x: x['delta_j']/250., min = (s.s[filt]['delta_j']/250.).min(), nbins=10)
+            ax[0].plot(p['rbins'],p['z_rms']/p['zform_rms'],
                        label="$%.2f < j_z/j_c < %.2f$"%(jcrange[0],jcrange[1]),color=colors[j])
-            ax[0].set_xlabel('$\Delta j_z~[10^{3} \mathrm{~kpc~km~s^{-1}}]$')
-            ax[0].set_ylabel('$z_{rms}/z_{form_{rms}}$')
+            ax[0].set_xlabel('$\Delta R_g~[\mathrm{kpc}]$')
+            ax[0].set_ylabel('$z_{rms}/z_{i,rms}$')
             
-            ax[1].plot(p['rbins']/1e3,p['zform_rms'])
-            ax[1].set_xlabel('$\Delta j_z~[10^{3} \mathrm{~kpc~km~s^{-1}}]$')
-            ax[1].set_ylabel('$z_{form_{rms}}~[\mathrm{kpc}]$')
+            ax[1].plot(p['rbins'],p['zform_rms'])
+            ax[1].set_xlabel('$\Delta R_g~[\mathrm{kpc}]$')
+            ax[1].set_ylabel('$z_{i,rms}~[\mathrm{kpc}]$')
 
-            ax[2].plot(p['rbins']/1e3,p['z_rms'])
-            ax[2].set_xlabel('$\Delta j_z~[10^{3} \mathrm{~kpc~km~s^{-1}}]$')
+            ax[2].plot(p['rbins'],p['z_rms'])
+            ax[2].set_xlabel('$\Delta R_g~[\mathrm{kpc}]$')
             ax[2].set_ylabel('$z_{rms}~[\mathrm{kpc}]$')
 
 
@@ -572,7 +576,7 @@ def make_zrms_jfinal_fig(s,jmin,jmax,agemin,agemax) :
 
     
 
-def make_zrms_jform_fig(s,jmin,jmax,agemin,agemax) : 
+def make_zrms_jform_fig(s,rmin,rmax,agemin,agemax) : 
     from pynbody.filt import BandPass
     from pynbody.analysis.profile import Profile
     from fitting import expo
@@ -581,8 +585,7 @@ def make_zrms_jform_fig(s,jmin,jmax,agemin,agemax) :
 
     # set up filters
     
-    jfilt = BandPass('jz',jmin,jmax)
-    jformfilt = BandPass('jzform',jmin,jmax)
+    rformfilt = BandPass('rform',rmin,rmax)
     agefilt = BandPass('age',agemin,agemax)
 
     f = plt.figure()
@@ -596,31 +599,34 @@ def make_zrms_jform_fig(s,jmin,jmax,agemin,agemax) :
 
         jcfilt = BandPass('jz/jc', jcrange[0],jcrange[1])
         
-        filt = agefilt & jcfilt & jformfilt
+        filt = agefilt & jcfilt & rformfilt
 
         if filt.where(s.s)[0].size > 0: 
-            p = Profile(s.s[filt], calc_x=lambda x: x['delta_j'], min = s.s[filt]['delta_j'].min(), nbins=10)
-            plt.plot(p['rbins']/1e3,p['z_rms']/p['zform_rms'],
+            p = Profile(s.s[filt], calc_x=lambda x: x['delta_j']/250., min = (s.s[filt]['delta_j']/250.).min(), nbins=10)
+
+            good = np.where(p['n'] > 100)[0]
+            plt.plot(p['rbins'][good],(p['z_rms']/p['zform_rms'])[good],
                      label="$%.2f < j_z/j_c < %.2f$"%(jcrange[0],jcrange[1]),color=colors[j])
             
-            plt.xlabel('$\Delta j_z~[10^3~\mathrm{kpc~km~s^{-1}}]$')
-            plt.ylabel('$z_{rms}/z_{form_{rms}}$')
+            plt.xlabel('$\Delta R_g$ [kpc]')
+            plt.ylabel('$z_{rms}/z_{i,rms}$')
 
     # fit
                     
-    x = np.linspace(p['rbins'].min(),p['rbins'].max(),100)
-    p1, res = optimize.leastsq(errfunc,[1.0,1000], args=(np.array(p['rbins']),
+    x = np.linspace(p['rbins'][good].min(),p['rbins'][good].max(),100)
+    p1, res = optimize.leastsq(errfunc,[1.0,1.0], args=(np.array(p['rbins']),
                                                          np.array(p['z_rms']/p['zform_rms']),
                                                          np.array(p['z_rms']/p['zform_rms']/np.sqrt(p['n']))))
                 
-    plt.plot(x/1e3,fitfunc(p1,x),'r--')
+    plt.plot(x,fitfunc(p1,x),'r--')
+    colors = ['orange','blue','green']
 
-    for alpha in [0.5,1.0,2.0]:
-        y = interp(0,p['delta_j'],p['z_rms']/p['zform_rms'])*np.exp(x/(625.0*(2+alpha)))
-        plt.plot(x/1e3,y,'k--')
-        plt.annotate(r'%.1f'%alpha, (x[-1]/1e3+.01, y[-1]),fontsize=12)
+    for i, alpha in enumerate([0.5,1.0,2.0]):
+        y = interp(0,p['delta_j']/250.,p['z_rms']/p['zform_rms'])*np.exp(x/(2.5*(2+alpha)))
+        plt.plot(x,y,color=colors[i],linestyle='--')
+        plt.annotate(r'%.1f'%alpha, (x[-1]+.01, y[-1]),fontsize=12,color=colors[i])
         
-    plt.title('$%d < j_{form} < %d$'%(jmin,jmax))
+    plt.title('$%.1f < R_{form} \mathrm{~[kpc]}< %.1f$'%(rmin,rmax))
 
     plt.legend(loc=0,prop=dict(size='small'))
 

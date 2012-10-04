@@ -368,7 +368,7 @@ def get_zrms_grid(s,varx,vary,rmin,rmax,zmin,zmax,gridsize=(20,20)) :
 
     """
 
-    s.s['dr'] = s.s['rxy']-s.s['rform']
+#    s.s['dr'] = s.s['rxy']-s.s['rform']
 
     hist, xs, ys = pynbody.plot.generic.hist2d(s.s[varx],s.s[vary],mass=s.s['mass'],
                                                make_plot=False,gridsize=gridsize)

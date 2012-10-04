@@ -62,16 +62,17 @@ def make_r_z_figure(path):
 
     
     
-def load_snapshots(): 
-    slist= [pynbody.load('6/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00633'), 
-            pynbody.load('6/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00660'),
-            pynbody.load('7/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00771'),
-            pynbody.load('9/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00921')]
-            
-    pynbody.analysis.halo.center(slist[0],mode='ind',ind=smbh.bh_index(slist[0]))
-    for s in slist[1:] : 
-        pynbody.analysis.halo.center(s.g,mode='hyb')
+def load_snapshots(flist = None):
+    if flist is None : 
+        flist = ['6/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00633', 
+                 '6/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00660',
+                 '7/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00771',
+                 '9/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00921']
+    slist = []
 
+    for f in flist : 
+        slist.append(pynbody.load(f))
+ 
     return slist
 
 
@@ -110,3 +111,132 @@ def make_morph_evol_figure(slist) :
         
     
     plt.subplots_adjust(hspace=0.1)
+
+
+def central_profile_figure(slist):
+
+    d = pynbody.filt.Disc(1, .5)
+
+    fig, axs = plt.subplots()
+    fig2, axs2 = plt.subplots()
+
+    labels = ['nomet','met',]
+    colors = ['b','r']
+    for i,s in enumerate([slist[0],slist[2]]) : 
+        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.001,max=1)
+        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.001,max=1)
+
+        axs.plot(pg['rbins'].in_units('pc'),pg['density'].in_units('Msol kpc^-2'),colors[i],label=labels[i])
+        axs.plot(ps['rbins'].in_units('pc'),ps['density'].in_units('Msol kpc^-2'),'%s--'%colors[i])
+
+        
+
+    
+    axs.legend()
+    axs2.legend()
+    axs.set_xlabel('R [kpc]')
+    axs2.set_xlabel('R [kpc]')
+    axs.set_ylabel(r'$M_{\odot}$')
+    axs2.set_ylabel(r'$v, v_{disp} \mathrm{km/s}$')
+    axs.loglog()
+    axs2.semilogx()
+
+
+def central_vsigma(slist) : 
+    d = pynbody.filt.Disc(1,.1)
+
+    fig, axs = plt.subplots(2,1, figsize=(8,12))
+
+    labels = ['nomet','met',]
+    colors = ['b','r']
+
+    for i, s in enumerate([slist[0], slist[2]]) : 
+        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.001,max=1)
+        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.001,max=1)
+    
+
+        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed']/pg['speed_disp'], colors[i], label=labels[i])
+        
+        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed']/ps['speed_disp'], colors[i])
+
+
+    for ax in axs: 
+        ax.semilogx()
+        ax.set_xlabel(r'R [pc]')
+        ax.set_ylabel(r'$v/\sigma$')
+    axs[0].legend()
+    axs[0].set_title('gas')
+    axs[1].set_title('stars')
+    
+def central_velocity_profile(slist) : 
+    d = pynbody.filt.Disc(1,.5)
+
+    fig, axs = plt.subplots(2,1, figsize=(8,12))
+
+    labels = ['nomet','met',]
+    colors = ['b','r']
+
+    for i, s in enumerate([slist[0], slist[2]]) : 
+        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.001,max=1)
+        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.001,max=1)
+    
+
+        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed'], colors[i], label=labels[i])
+        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed_disp'], '%s--'%colors[i])
+
+
+        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed'], colors[i])
+        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed_disp'],'%s--'%colors[i])
+
+
+    for ax in axs: 
+        ax.semilogx()
+        ax.set_ylim(0,1000)
+        ax.set_xlabel(r'R [pc]')
+        ax.set_ylabel(r'$v, v_{disp} \mathrm{~km/s}$')
+    axs[0].legend()
+    axs[0].set_title('gas')
+    axs[1].set_title('stars')
+
+
+def vsigma_vs_time(dir, times = [5003.1, 5004, 5005]) : 
+    flist = smbh.nearest_output(times,dir)
+
+    fig, ax = plt.subplots()
+
+    for f,t in zip(flist,times) : 
+        s = pynbody.load(f)
+        pynbody.analysis.halo.center(s,mode='hyb',verbose=True,min_particles = 100000)
+        s.g['speed'] = np.sqrt(s.g['v2'])
+        ind = np.where(s.g['rho'].in_units('m_p cm^-3') < 1e6)[0]
+        p = pynbody.analysis.profile.Profile(s.g[ind],max = 1, min = .002, type = 'log', nbins=20)
+        ax.plot(p['rbins'].in_units('pc'), p['speed']/p['speed_disp'], label = 't=%.2f Myr'%t)
+
+    ax.set_xlabel('$R$ [pc]')
+    ax.set_ylabel(r'$v/\sigma$')
+    ax.legend()
+    ax.semilogx()
+
+ 
+
+def pdf_vs_time(dir, times = [5003.1,5004,5005]) : 
+    from scipy.stats import gaussian_kde as kde
+    from utils import shrink_sphere
+
+    flist = smbh.nearest_output(times,dir)
+
+    fig, ax = plt.subplots()
+
+    rho = np.linspace(-2,12,100)
+
+    for f, t in zip(flist,times) : 
+        s = pynbody.load(f)
+        s['pos'] -= utils.shrink_sphere(s,r = 5,verbose=True)
+        pynbody.analysis.halo.vel_center(s)
+        k = kde(np.log10(s.g['rho'].in_units('m_p cm^-3')[np.where(s.g['r'] < 0.5)[0]]))
+#        ax.hist(np.log10(s.g['rho'].in_units('m_p cm^-3')),histtype='step',normed=True)
+        ax.plot(rho, k(rho), label = 't=%.2f Myr'%t)
+    ax.set_xlabel(r'$\rho$ [amu/cc]')
+    ax.legend(loc='upper left')
+                
+        
