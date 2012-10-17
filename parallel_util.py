@@ -24,10 +24,8 @@ def run_parallel(func, single_args, repeat_args,
     **Optional Keywords**
 
     *processes* : the number of processes to spawn; default is
-                  pynbody.config['number of threads']
-
-    *test* : for debugging, calls the serial version of map instead of
-             spawning a pool and running map in parallel
+                  pynbody.config['number of threads']. Set to 1 for
+                  testing and using the serial version of map. 
 
     **Usage** 
 
