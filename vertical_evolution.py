@@ -576,7 +576,7 @@ def make_zrms_jfinal_fig(s,rgmin,rgmax,agemin,agemax) :
                 
                 
                 
-    ax[1].set_title('$%.1f < R_g < %.1f$'%(rgmin,rgmax))
+    ax[1].set_title('$%.1f < R_{g,now} < %.1f$'%(rgmin,rgmax),size='large')
     ax[0].legend(loc=0,prop=dict(size='small'))
 
     
@@ -634,7 +634,7 @@ def make_zrms_jform_fig(s,agemin,agemax) :
             ax.plot(x,y,color=colors2[k],linestyle='--')
             ax.annotate(r'%.1f'%alpha, (x[-1]+.01, y[-1]),fontsize=12,color=colors2[k])
         
-            ax.set_title('$%.1f < R_{form} \mathrm{~[kpc]}< %.1f$'%(rmin,rmax),fontsize='small')
+            ax.set_title('$%.1f < R_{form} \mathrm{~[kpc]}< %.1f$'%(rmin,rmax),fontsize='large')
         
         ax.set_xlim(-3.5,5.5)
         if i ==0 : ax.legend(loc=0,prop=dict(size='small'))

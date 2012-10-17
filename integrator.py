@@ -16,7 +16,7 @@ def dotpz(x,y,z,a,b,rc,vc):
     return -vc**2/b**2*z/(x**2+y**2/a**2+z**2/b**2+rc**2)
 
 def pot(x,y,z,a,b,rc,vc):
-    return -vc**2/2.0*np.log(x**2+y**2/a**2+z**2/b**2+rc**2)
+    return vc**2/2.0*np.log(x**2+y**2/a**2+z**2/b**2+rc**2)
 
 def integrate(R,p,a=1,b=1,rc=1.,vc=1.,ntime=100000,dt=.001) :
     x,y,z, = R
@@ -107,17 +107,20 @@ def find_crossing(t,y):
 
     zeros = np.empty(len(inds))
 
+    good = []
+    
     for i, ind in enumerate(inds): 
         if (np.diff(y)<0).any() : 
             sl = slice(ind+2,ind-2,-1)
         else : 
             sl = slice(ind-2,ind+2)
+            good.append(i)
 
         zeros[i] = np.interp(0.0,y[sl],t[sl])
 
     return zeros
 
-def plot_sos(R,p,a=1,b=1,rc=1.,vc=1.,ntime=100000,dt=.001, ax = None):
+def plot_sos(R,p,a=1,b=1,rc=1.,vc=1.,ntime=100000,dt=.01, ax = None):
     t,x,y,z,vx,vy,vz,E = integrate(R,p,a,b,rc,vc,ntime,dt)
     
     zeros = find_crossing(t,y)
@@ -140,3 +143,24 @@ def plot_sos(R,p,a=1,b=1,rc=1.,vc=1.,ntime=100000,dt=.001, ax = None):
         ax[1].set_aspect(1)
     else : 
         ax.plot(np.interp(zeros,t,x),np.interp(zeros,t,vx),'.')
+
+
+def create_sos(E,n=3,a=.9,b=1,rc=.14,vc=1) : 
+
+    fracs = np.linspace(0.3,.7,5)
+    
+    f,axs = plt.subplots(1,2)
+
+    vy0 = np.sqrt(2*(E-pot(3*rc,0,0,a,b,rc,vc)))
+    KE0 = .5*vy0**2
+
+    for frac in fracs : 
+        KEy = frac*KE0
+        vy = np.sqrt(2*KEy)
+        KEx = (1-frac)*KE0
+        vx = np.sqrt(2*KEx)
+       
+        print vx,vy,KEx,KEy
+        plot([3*rc,0,0],[vx,vy,0],a=a,rc=rc,ax=axs[0])
+        plot_sos([3*rc,0,0],[vx,vy,0],a=a,rc=rc,ax=axs[1])
+        

@@ -61,8 +61,18 @@ if __name__ == '__main__':
 
 def hop_center(s):
 
-    filename = 'hop/grp%s.pos'%s.filename[-5:]
-    data = np.genfromtxt(filename,unpack=True)
+    if s.filename[-1] == '/' : name = s.filename[-6:-1] 
+    else: name = s.filename[-5:]
+
+    filename = s.filename[:-12]+'hop/grp%s.pos'%name
+    
+    try : 
+        data = np.genfromtxt(filename,unpack=True)
+    except IOError : 
+        import os
+        os.system('cd %s;/home/itp/roskar/ramses/galaxy_formation/script_hop.sh %d;cd ..'%(s.filename[:-12],int(name)))
+        data = np.genfromtxt(filename,unpack=True)
+
     cen = data.T[0][4:7]
     vcen = data.T[0][7:10]
     
@@ -71,14 +81,49 @@ def hop_center(s):
     
 
 
-def make_pretty_picture(outputname):
+def make_pretty_picture(outputname, s = None):
     from cosmo_plots import make_multiple_snapshot_images
-    s = pynbody.load(outputname)
-    s['mass']
+    if s is None: 
+        s = load_center(outputname)
+        
+    st = s[pynbody.filt.Sphere(120)]
+    make_multiple_snapshot_images([st],20,vgmin=21,vgmax=25.5,vsmin=-15,vsmax=-10.)
+    
+    return s, st
+
+
+def compare_outputs(runlist,outnum) : 
+    if isinstance(runlist[0], str) : 
+        for i,run in enumerate(runlist) : 
+            s = pynbody.load(run)
+            hop_center(s)
+            s.physical_units()
+            pynbody.analysis.halo.sideon(s.g[pynbody.filt.Sphere(100)],mode='ssc')
+            runlist[i] = s
+
+
+def make_comparison_figure(dirlist,names):
+    import matplotlib.image as mpimg
+    f,axs = plt.subplots(1,3,figsize=(15,5))
+    
+    for i,run in enumerate(dirlist): 
+        im = mpimg.imread(run+'/composites/composite13.76Gyr.png')
+        axs[i].imshow(im)
+        axs[i].annotate(names[i],(0.1,.87),xycoords='axes fraction', color = 'white')
+        axs[i].yaxis.set_ticklabels("")
+        axs[i].xaxis.set_ticklabels("")
+
+    
+def load_center(output):
+    s = pynbody.load(output)
     hop_center(s)
     s.physical_units()
     st = s[pynbody.filt.Sphere(120)]
-    make_multiple_snapshot_images([st],100,vgmin=6)
-
-    
-    return s, st
+    pynbody.analysis.angmom.sideon(st.g,disk_size='5 kpc',mode='ssc')
+    s.s['age'] = s._info['time'] - s.s['age']
+    s.s['age']*=s._info['unit_t']
+    s.s['age'].units = 's'
+    old = np.where(s.s['age'].in_units('Myr') > 10)[0]
+    s.s['oldmass'] = s.s['mass']
+    s.s['mass'][old] *= s.s['age'].in_units('Myr')[old]**(-.7)
+    return s

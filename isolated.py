@@ -623,3 +623,7 @@ def plot_2D_grid(s, varx, vary, varz, gridsize=(10,10)) :
             else : 
                 zrms[j,i] = -500
     return hist, zrms, zrms_i, xs, ys
+
+
+#def plot_age_velocity_relation(s, limits = pynbody.filt.Disc(7,9,1)) : 
+    
