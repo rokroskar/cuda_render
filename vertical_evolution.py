@@ -71,7 +71,11 @@ def zrms_deltar_rform(s,gridsize=(20,20)):
 
     if 'rform' not in s.s.keys():
         iso.get_rform(s.s)
-    
+
+
+    if 'dr' not in s.s.keys():
+        s.s['dr'] = s.s['rxy']-s.s['rform']
+
     for i,rlims in enumerate([[2,4],[4,6],[6,8],[8,10]]) : 
         
         rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])

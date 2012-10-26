@@ -182,6 +182,10 @@ def weave_integrate_lf(R,p,a=1.,b=1.,rc=1.,vc=1.,ntime=100000,dt=.001) :
 
     return ts, xs, ys, zs, vxs, vys, vzs, Es
 
+
+#from numba import autojit, jit, double
+
+#@autojit()
 def integrate(R,p,a=1,b=1,rc=1.,vc=1.,ntime=100000,dt=.001) :
     x,y,z, = R
     px, py, pz = p

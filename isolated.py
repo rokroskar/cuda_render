@@ -181,7 +181,6 @@ def get_cofm_parallel(dir='./', filepattern='*/*.0????', filelist = None, block 
             vcofms[i] = res[i][2]
 
         np.savez(dir+'cofm.npz', cofm = cofms, vcofm = vcofms, times = times)
-        
     else : 
         return res, filelist
 
@@ -201,7 +200,7 @@ def get_cofm_single_file(args) :
 
     s = pynbody.load(name)
 
-    time = s.properties['a']
+    time = s.properties['time'].in_units('Gyr')
     cofm = pynbody.analysis.halo.center(s, retcen=True)
     s.ancestor['pos']-=cofm
     vcofm = pynbody.analysis.halo.vel_center(s.s,retcen=True)
@@ -625,5 +624,19 @@ def plot_2D_grid(s, varx, vary, varz, gridsize=(10,10)) :
     return hist, zrms, zrms_i, xs, ys
 
 
-#def plot_age_velocity_relation(s, limits = pynbody.filt.Disc(7,9,1)) : 
+def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.5,.2)) : 
+    prof = pynbody.analysis.profile.Profile(s.s[limits],calc_x=lambda x: x['age'],type='log',nbins=10,min=0.1)
+
+    plt.plot(prof['rbins'],
+             np.sqrt(prof['vr_disp']**2+prof['vt_disp']**2+prof['vz_disp']**2),'k-',label=r'$\sigma_{tot}$',linewidth=2)
+    plt.plot(prof['rbins'],prof['vr_disp'],'k--',label=r'$\sigma_r$',linewidth=2)
+    plt.plot(prof['rbins'],prof['vt_disp'],'k-.',label=r'$\sigma_{\phi}$',linewidth=2)
+    plt.plot(prof['rbins'],prof['vz_disp'],'k:',label=r'$\sigma_z$',linewidth=2)
+
+    plt.loglog()
+
+    plt.xlabel('Age [Gyr]')
+    plt.ylabel('$\sigma$ [km/s]')
+    plt.legend(loc='upper left',prop=dict(size='small'))
+    
     
