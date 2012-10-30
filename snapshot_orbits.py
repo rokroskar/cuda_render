@@ -30,7 +30,7 @@ class SnapshotPotential:
     """
 
 
-    def __init__(self, s,xlim=[-20,20],ylim=[-20,20],zlim=[-5,5],nx=20,ny=20,nz=20,num_threads=30) : 
+    def __init__(self, s,xlim=[-20,20],ylim=[-20,20],zlim=[-5,5],nx=20,ny=20,nz=20,num_threads=30, axisymmetric = False) : 
 
         self.s = s 
         self.xlim = xlim 
@@ -43,20 +43,40 @@ class SnapshotPotential:
         #self.generate_force_grid()
 
 
-    def generate_force_grid(self, pkdgrav=False) : 
+    def generate_force_grid(self, pkdgrav=False, axisymmetric = False) : 
         from pynbody.grav_omp import direct as direct_omp
         from os import system 
 
-        self.grid = np.empty((self.nx,self.ny,self.nz,3))
-        
-        xs = np.linspace(self.xlim[0],self.xlim[1],self.nx)
-        ys = np.linspace(self.ylim[0],self.ylim[1],self.ny)
-        zs = np.linspace(self.zlim[0],self.zlim[1],self.nz)
+        if axisymmetric: 
+
+            s['pos_old'] = s['pos'].copy()
+            phi = np.random.uniform(-1,1,len(s))
+            s['pos'] = [s['rxy']*np.cos(phi),
+                        s['rxy']*np.sin(phi),
+                        s['z']]
+            rs = np.linspace(0,xlim[1],self.nx)
+            zs = np.linspace(self.zlim[0],self.zlim[1],self.nz)
             
-        for i,x in enumerate(xs) : 
-            for j,y in enumerate(ys) : 
-                for k,z in enumerate(zs) : 
-                    self.grid[i,j,k] = np.array([x,y,z])
+            grid = np.empty((self.nx,self.nz,4,3))
+
+            for i, r in enumerate(rs) : 
+                for j,z in enumerate(zs) : 
+                    grid[i,j] = [(r,0,z),(0,r,z),(-r,0,z),(0,-r,z)]
+
+            s['pos'] = s['pos_old']
+        
+        else : 
+
+            self.grid = np.empty((self.nx,self.ny,self.nz,3))
+        
+            xs = np.linspace(self.xlim[0],self.xlim[1],self.nx)
+            ys = np.linspace(self.ylim[0],self.ylim[1],self.ny)
+            zs = np.linspace(self.zlim[0],self.zlim[1],self.nz)
+        
+            for i,x in enumerate(xs) : 
+                for j,y in enumerate(ys) : 
+                    for k,z in enumerate(zs) : 
+                        self.grid[i,j,k] = np.array([x,y,z])
                     
         if not pkdgrav:
                     
@@ -82,6 +102,9 @@ class SnapshotPotential:
             system('rm potgridsnap*')
             
         self.xs, self.ys, self.zs = [xs,ys,zs]
+
+        if axisymmetric : 
+            
         
         self.pot = pot
         self.acc = acc
