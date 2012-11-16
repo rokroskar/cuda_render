@@ -6,6 +6,96 @@ import matplotlib.pyplot as plt
 # see Bovy, Rix, Liu, Hogg, Beers + Lee 2012, ApJ 753, 148
 # though this is much simpler since we don't have selection
 # function to deal with
+def two_sech_likelihood(x=[1.0,1.0,1.0],zpos=None, zmin=0.0, zmax=3.0):
+
+    hz1 = x[0]
+    if hz1 <= 0.1 or hz1 > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    hz2 = x[1]
+    if hz2 <= 0.1 or hz2 > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    f = x[2]
+    if f <= 1e-5 or f > 1.0 : 
+        return -(np.finfo(np.dtype(np.float64)).max)
+
+#    rho1 = x[2]
+#    if rho1 <= 1e-5 or rho1 > 1e5: #So it does not go nuts
+#       return -(np.finfo(np.dtype(np.float64)).max)
+
+#    rho2 = x[3]
+#    if rho1 <= 1e-5 or rho1 > 1e5: #So it does not go nuts
+#       return -(np.finfo(np.dtype(np.float64)).max)
+
+    if isinstance(zmin, un.UnitBase) :
+        zmin=zmin.in_units('kpc')
+    if isinstance(zmax, un.UnitBase) :
+        zmax=zmax.in_units('kpc')
+
+    norm_int = 4*math.pi*(hz1*(1.0-f)*(math.tanh(zmax/hz1)-math.tanh(zmin/hz1))+
+                            f*hz2*(math.tanh(zmax/hz2)-math.tanh(zmin/hz2)))
+    
+    return np.sum((np.log((1.0-f)*np.cosh(np.abs(zpos)/hz1)**-2 + 
+                          f*np.cosh(np.abs(zpos)/hz2)**-2))) - len(zpos)*np.log(norm_int)
+
+def sech2_likelihood(x=1.0,zpos=None,zmin=0.0,zmax=3.0) :
+    hz = x
+
+    if hz <= 0.1 or hz > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    norm_int = 4*math.pi*(hz*(math.tanh(zmax/hz)-math.tanh(zmin/hz)))
+    
+    return np.sum((np.log(np.cosh(np.abs(zpos)/hz)**-2))) - len(zpos)*np.log(norm_int)
+
+def exp_likelihood(x=1.0,zpos=None,zmin=0.0,zmax=3.0) :
+    hz = x
+    if hz <= 0.1 or hz > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    norm_int = (4.0*math.pi*hz*(-np.exp(-zmax/hz) + 
+                                 np.exp(-zmin/hz)))
+
+    return np.sum(-zpos/hz) - len(zpos)*np.log(norm_int)
+
+
+def double_exp_likelihood(x=[1.0,1.0,1.0],zpos=None, zmin=0.0, zmax=3.0):
+
+    hz1 = x[0]
+    if hz1 <= 0.1 or hz1 > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    hz2 = x[1]
+    if hz2 <= 0.1 or hz2 > 100.: #So it does not go nuts
+       return -(np.finfo(np.dtype(np.float64)).max)
+
+    f = x[2]
+    if f <= 1e-5 or f > 1.0 : 
+        return -(np.finfo(np.dtype(np.float64)).max)
+
+#    rho1 = x[2]
+#    if rho1 <= 1e-5 or rho1 > 1e5: #So it does not go nuts
+#       return -(np.finfo(np.dtype(np.float64)).max)
+
+#    rho2 = x[3]
+#    if rho1 <= 1e-5 or rho1 > 1e5: #So it does not go nuts
+#       return -(np.finfo(np.dtype(np.float64)).max)
+
+    if isinstance(zmin, un.UnitBase) :
+        zmin=zmin.in_units('kpc')
+    if isinstance(zmax, un.UnitBase) :
+        zmax=zmax.in_units('kpc')
+
+    norm_int = 4*math.pi*((1.0-f)*hz1*(-np.exp(-zmax/hz1)+
+                                        np.exp(-zmin/hz1)) + 
+                          f*hz2*(-np.exp(-zmax/hz2)+
+                                  np.exp(-zmin/hz2)))
+    
+    return np.sum(np.log(
+            (1.0-f)*np.exp(-np.abs(zpos)/hz1)+
+            f*np.exp(-np.abs(zpos)/hz2))) - len(zpos)*np.log(norm_int)
+
 def exp_sech_likelihood(x=[1.0,1.0],rpos=None,zpos=None,rmin=4.0,rmax=10.0,
                       zmin=0.0, zmax=3.0):
 
@@ -61,11 +151,22 @@ def twoexp_likelihood(x=[1.0,1.0],rpos=None,zpos=None,rmin=4.0,rmax=10.0,
 def neg2expl(*a):
     # return negative of likelihood so that minimization scheme maximize 
     # likelihood
-    return -1*(twoexp_likelihood(*a))
+    return -1*(two_exp_likelihood(*a))
 
 def negexpsech(*a):
     return -1*(exp_sech_likelihood(*a))
 
+def negtwosech(*a):
+    return -1*(two_sech_likelihood(*a))
+
+def negtwoexp(*a): 
+    return -1*(double_exp_likelihood(*a))
+
+def negexp(*a):
+    return -1*(exp_likelihood(*a))
+
+def negsech2(*a):
+    return -1*(sech2_likelihood(*a))
 
 def two_exp_fit(sim,rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',zmax='4 kpc', func = neg2expl):
 
@@ -96,6 +197,23 @@ def two_exp_fit_simple(r,z,rmin,rmax,zmin,zmax,func=neg2expl) :
     else:
         return float('NaN'), float('NaN'), fitnum
 
+def two_comp_zfit_simple(z,zmin=0,zmax=3,p0=[1.0,1.0,.5],func=negtwosech) :
+    zs = z[np.where((z >= zmin)&(z < zmax))[0]]
+    fitnum = len(zs)
+    if fitnum > 100 : 
+        res = opt.fmin_powell(func,p0,args=(zs,zmin,zmax),disp=0)
+        return res, fitnum
+    else :
+        return float('NaN'), float('Nan'), fitnum
+
+def single_fit(z,zmin=0,zmax=3,p0=[1.0],func=negsech2):
+    fitnum = len(z)
+    if fitnum > 100 : 
+        res = opt.fmin_powell(func,p0,args=(z,zmin,zmax))
+        return res, fitnum
+    else :
+        return float('NaN'), float('Nan'), fitnum
+
 
 import emcee
 def mcerrors(sim,initparams, rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',
@@ -119,6 +237,32 @@ def mcerrors(sim,initparams, rmin='4 kpc',rmax='10 kpc',zmin='0 kpc',
     #import pdb; pdb.set_trace()
     return np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1]/2.0)
 
+def mcerrors_simple_singlevar(z,p0=[1.0,1.0,1.0],zmin=0,zmax=3,nwalkers=8,func=two_sech_likelihood) : 
+    ndim = 3
+
+    hz1,hz2,f=p0
+
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, func,
+                          args=(z,zmin,zmax))
+
+#    p0 = [np.random.rand(ndim) for i in xrange(nwalkers)]
+ #   print 'trying with %f %f'%(hr,hz)
+    p0 = [[np.random.normal(hz1,.1),np.random.normal(hz2,.1),np.random.normal(f,.1)] for i in xrange(nwalkers)]
+    #p0 = sampler.sampleBall([hr,hz],[hr/10.0, hz/10.0],nwalkers)
+    # following the 50-D gaussian example on the emcee page... 
+    # "burn-in"
+    pos, prob, state = sampler.run_mcmc(p0,100)
+    # reset to clear the samples
+    sampler.reset()
+    # re-run starting from the final position of the chain
+    sampler.run_mcmc(p0, 1000)
+    
+    #import pdb; pdb.set_trace()
+    return np.median(sampler.flatchain[:,0]), np.median(sampler.flatchain[:,1]), \
+        np.median(sampler.flatchain[:,2]), \
+        np.std(sampler.flatchain[:,0]), np.std(sampler.flatchain[:,1]), \
+        np.std(sampler.flatchain[:,2])
+    
 def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6,func=twoexp_likelihood) : 
     ndim = 2
 
@@ -135,7 +279,7 @@ def mcerrors_simple(r,z,hr,hz,rmin,rmax,zmin,zmax,nwalkers=6,func=twoexp_likelih
     # reset to clear the samples
     sampler.reset()
     # re-run starting from the final position of the chain
-    sampler.run_mcmc(pos, 1000, rstate0=state)
+    sampler.run_mcmc(pos, 100, rstate0=state)
     
     #import pdb; pdb.set_trace()
     return np.median(sampler.flatchain[:,0]), np.median(sampler.flatchain[:,1]), \
@@ -297,3 +441,44 @@ def block_histogram(qty='rexp',file='01024/g1536.01024.z0metbinagedecomp.dat',
     plt.xlabel('[Fe/H]')
     plt.ylabel('[O/Fe]')
     plt.colorbar().set_label(qtytitle)
+
+
+from scipy import stats
+def sample_sech2(scale=1.,size=1):
+    out= np.zeros(size)
+    nsamples= 0
+    while nsamples < size:
+        exps= stats.expon.rvs(scale=scale/2.,size=size-nsamples)
+        comp= 1./np.cosh(exps/scale)**2./4.*np.exp(exps/scale*2.)
+	indx= (stats.uniform.rvs(size=size-nsamples) < comp)
+        nnewsamples= np.sum(indx)
+        if nnewsamples > 0:
+            newsamples= exps[indx]
+            out[nsamples:nsamples+nnewsamples]= newsamples
+            nsamples+= nnewsamples
+    return out
+
+def sample_two_sech2(scale1=1.0,scale2=2.0,f=0.5,size=10000) : 
+    out = np.zeros(size)
+    nsamples = 0
+    
+    while nsamples < size: 
+        exps= stats.expon.rvs(scale=scale2/2.,size=size-nsamples)
+        #exps = stats.uniform.rvs(scale=5,size=size-nsamples)
+        comp= two_sech2(exps,scale1=scale1,scale2=scale2,f=f)/(np.exp(-exps/scale2*2.)*100)
+#        import pdb; pdb.set_trace()
+        indx= (stats.uniform.rvs(size=size-nsamples) < comp)
+        nnewsamples= np.sum(indx)
+        if nnewsamples > 0:
+            newsamples= exps[indx]
+            out[nsamples:nsamples+nnewsamples]= newsamples
+            nsamples+= nnewsamples
+    return out
+
+def two_sech2(x,scale1=1.0,scale2=2.0,f=0.5) : 
+    return (1-f)*np.cosh(-x/scale1)**-2 + f*np.cosh(-x/scale2)**-2
+
+#def estimate_error(fit,func=two_sech_fit_simple,ntimes=100): 
+#    vals = np.zeros((ntimes,len(fit)))
+
+    

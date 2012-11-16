@@ -69,6 +69,7 @@ def zrms_deltar_rform(s,gridsize=(20,20)):
     
     pynbody.analysis.angmom.faceon(s)
 
+
     if 'rform' not in s.s.keys():
         iso.get_rform(s.s)
 
@@ -86,24 +87,23 @@ def zrms_deltar_rform(s,gridsize=(20,20)):
         
         ax = fig.add_subplot(2,2,i+1)
 
-        plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
+        plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red',linewidth=1.5)
 
         im = plt.imshow(zrms-zrms_i,origin='lower',extent=(min(xs),max(xs),min(ys),max(ys)),
                         aspect='auto',vmin=-.2,vmax=1.,interpolation='nearest')
+                      
+        plt.xlabel(r'$\Delta R$ [kpc]',fontweight='bold', fontsize='small')
+        plt.ylabel('Age [Gyr]', fontweight='bold', fontsize='small')
         
-        ax.set_xlabel('$\Delta R$ [kpc]',fontsize='smaller')
-        ax.set_ylabel('Age [Gyr]',fontsize='smaller')
-              
-        plt.xlabel('$\Delta R$ [kpc]')
-        plt.ylabel('Age [Gyr]')
-        
-        ax.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small')
+        ax.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small', fontweight='bold')
 
     cbax = fig.add_axes([0.91,0.1,0.02,0.8])
     cb1 = fig.colorbar(im,cax=cbax)
-    cb1.set_label('$\Delta z_{rms} \mathrm{~[kpc]}$',fontsize='smaller')
+    cb1.set_label('$\Delta z_{rms} \mathrm{~[kpc]}$',fontsize='smaller', fontweight='bold')
     for tick in cb1.ax.get_yticklabels() :
         tick.set_fontsize('smaller')
+        
+    
 
 def hz_deltar_rform(s, gridsize=(10,10),vmin=0,vmax=1.2,ncpu=pynbody.config['number_of_threads'], form = 'sech', get_errors = False):
     
@@ -269,7 +269,7 @@ def hz_deltaj_jjmax(s, gridsize=(10,10),vmin=0,vmax=None,ncpu=pynbody.config['nu
         cb1 = fig.colorbar(im,cax=cbax)
         cb1.set_label('h_z [kpc]')
 
-def hz_feh_ofe(s,gridsize=(10,10),rmin=4,rmax=9,ncpu=pynbody.config['number_of_threads']):
+def hz_feh_ofe(s,gridsize=(20,20),rmin=4,rmax=9,ncpu=pynbody.config['number_of_threads']):
     
     fig = plt.figure(figsize=(15,5))
     
@@ -287,12 +287,12 @@ def hz_feh_ofe(s,gridsize=(10,10),rmin=4,rmax=9,ncpu=pynbody.config['number_of_t
     
 
 
-    ax = fig.add_subplot(121)
+    ax = fig.add_subplot(122)
 
     plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
     im = plt.imshow(hz,origin='lower',
                     extent=(min(xs), max(xs), min(ys), max(ys)),
-                    aspect='auto',vmin=0,vmax=1.0,interpolation='nearest')
+                    aspect='auto',vmin=0,vmax=0.6,interpolation='nearest')
         
     cb = plt.colorbar(im)
     cb.set_label('$h_z [kpc]$',fontsize='smaller')
@@ -300,11 +300,11 @@ def hz_feh_ofe(s,gridsize=(10,10),rmin=4,rmax=9,ncpu=pynbody.config['number_of_t
     plt.xlabel('[Fe/H]',fontsize='smaller')
     plt.ylabel('[O/Fe]',fontsize='smaller')
         
-    ax = fig.add_subplot(122)
+    ax = fig.add_subplot(121)
     plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
     im = plt.imshow(hr,origin='lower',
                     extent=(min(xs), max(xs), min(ys), max(ys)),
-                    aspect='auto',vmin=1.5,vmax=5,interpolation='nearest')
+                    aspect='auto',vmin=1.5,vmax=4.5,interpolation='nearest')
         
     cb = plt.colorbar(im)
     cb.set_label('$h_r [kpc]$',fontsize='smaller')
@@ -312,7 +312,6 @@ def hz_feh_ofe(s,gridsize=(10,10),rmin=4,rmax=9,ncpu=pynbody.config['number_of_t
     plt.xlabel('[Fe/H]',fontsize='smaller')
     plt.ylabel('[O/Fe]',fontsize='smaller')
         
-
 
 def zrms_deltar_rfinal(s):
     
@@ -353,6 +352,9 @@ def vdisp_deltar_rform(s,gridsize=(20,20),vmin=0,vmax=70):
     if 'rform' not in s.s.keys():
         iso.get_rform(s.s)
     
+    if 'dr' not in s.s.keys():
+        s.s['dr'] = s.s['rxy']-s.s['rform']
+
     for i,rlims in enumerate([[2,4],[4,6],[6,8],[8,10]]) : 
         
         rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
@@ -362,13 +364,13 @@ def vdisp_deltar_rform(s,gridsize=(20,20),vmin=0,vmax=70):
         
         ax = fig.add_subplot(2,2,i+1)
 
-        plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
+        plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red',linewidth=1.5)
 
         im = plt.imshow(vdisp_z,origin='lower',extent=(min(xs),max(xs),min(ys),max(ys)),
                         aspect='auto',interpolation='nearest',vmin=vmin,vmax=vmax)
         
-        plt.xlabel('$\Delta R$ [kpc]',fontsize='smaller')
-        plt.ylabel('Age [Gyr]',fontsize='smaller')
+        plt.xlabel('$\Delta R$ [kpc]',fontsize='small', fontweight='bold')
+        plt.ylabel('Age [Gyr]',fontsize='small', fontweight='bold')
         
         plt.title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]),fontsize='small')
 
@@ -378,6 +380,8 @@ def vdisp_deltar_rform(s,gridsize=(20,20),vmin=0,vmax=70):
     for tick in cb1.ax.get_yticklabels() :
         tick.set_fontsize('smaller')
 
+
+    
 def vdisp_deltar_rfinal(s):
     
     fig = plt.figure(figsize=(15,15))
@@ -583,7 +587,6 @@ def make_zrms_jfinal_fig(s,rgmin,rgmax,agemin,agemax) :
     ax[1].set_title('$%.1f < R_{g,now} < %.1f$'%(rgmin,rgmax),size='large')
     ax[0].legend(loc=0,prop=dict(size='small'))
 
-    
 
 def make_zrms_jform_fig(s,agemin,agemax) : 
     from pynbody.filt import BandPass
@@ -643,5 +646,178 @@ def make_zrms_jform_fig(s,agemin,agemax) :
         ax.set_xlim(-3.5,5.5)
         if i ==0 : ax.legend(loc=0,prop=dict(size='small'))
 
+
+
+def make_zrms_vs_r_plot(rs = [2,4,6,8,10,12,14], agefilt = pynbody.filt.BandPass('age',7,9)) : 
     
+    from parallel_util import run_parallel
+
+    flist = ['12M_hr_diff_coeff0.05/10/12M_hr_diff_coeff0.05.01000', 
+             '12M_hr_25pc_soft/10/12M_hr_25pc_soft.01000.gz', 
+             '12M_hr_100pc_soft/10/12M_hr_100pc_soft.01000.gz', 
+             '12M_hr_x0.5N/10/12M_hr_x0.5N.01000.gz', 
+             '12M_hr_x2N/10/12M_hr_x2N.01000.gz', 
+             '12M_hr_x4N/10/12M_hr_x4N.01000']
+
+    names = ['fiducial', 
+             '$h_s = 25\mathrm{~pc}$', 
+             '$h_s = 100\mathrm{~pc}$', 
+             '$0.5 N$', 
+             '$2 N$', 
+             '$4 N$']
+
+    slist = []
+
+    for f in flist : 
+        slist.append(pynbody.load(f))
+
+#    slist = run_parallel(pynbody.load, flist, [], processes = 6)
+    
+    fig, axs = plt.subplots(1,2)
+
+    iso.compare_zrms_vs_r(slist[:3], names[:3], rs, agefilt, axs[0])
+    iso.compare_zrms_vs_r([slist[0],slist[3],slist[4],slist[5]], 
+                          [names[0],names[3],names[4],names[5]], 
+                          rs, agefilt, axs[1])
+
+    
+    
+    for ax in axs : 
+        ax.set_xlabel('R [kpc]')
+        ax.set_ylabel('$z_{rms}$')
+        ax.set_ylim(0,2)
+        ax.set_xlim(0,15)
+        ax.legend(loc='upper left')
+
+
+def make_zprofiles(rs = [4.5,8.5,12.5]) : 
+    from parallel_util import run_parallel
+    from pynbody.analysis.profile import VerticalProfile
+
+    flist = ['12M_hr_diff_coeff0.05/10/12M_hr_diff_coeff0.05.01000', 
+             '12M_hr_x0.5N/10/12M_hr_x0.5N.01000.gz', 
+             '12M_hr_x2N/10/12M_hr_x2N.01000.gz', 
+             '12M_hr_x4N/10/12M_hr_x4N.01000']
+
+    names = ['fiducial', 
+             '$0.5 N$', 
+             '$2 N$', 
+             '$4 N$']
+
+    fig, axs = plt.subplots(1,3,figsize=(20,6))
+
+    slist = []
+
+    for f in flist : 
+        slist.append(pynbody.load(f))
         
+    for i,s in enumerate(slist): 
+        pynbody.analysis.angmom.faceon(s)
+        for j, r in enumerate(rs): 
+            p = VerticalProfile(s.s,r-.5,r+.5,3.0,nbins=50)
+            axs[j].plot(p['rbins'],p['density']/p['density'][17], label = names[i])
+              
+    for i,ax in enumerate(axs): 
+        ax.semilogy()
+        ax.set_xlabel('z [kpc]')
+        ax.set_title('$%.1f < R \\mathrm{~[kpc]}< %.1f$'%(rs[i]-0.5,rs[i]+0.5))
+#        ax.set_ylim(1e-3,1)
+
+    axs[0].legend(loc='upper right')
+    axs[0].set_ylabel(r'$\rho/\rho_{z=1}$')
+    axs[1].set_yticklabels("")
+    axs[2].set_yticklabels("")
+
+    plt.subplots_adjust(wspace=.1)
+    
+def two_sech2(xs,scale1=1.0,scale2=2.0,f=0.5) : 
+    return (1.-f)*np.cosh(xs/scale1)**-2+f*np.cosh(xs/scale2)**-2
+
+def make_flare_plot() : 
+    import diskfitting
+    import fitting
+
+    s = pynbody.load('12M_hr_diff_coeff0.05/10/12M_hr_diff_coeff0.05.01000')
+    pynbody.analysis.angmom.faceon(s)
+    rs = [4,6,8,10,12,14]
+    f,axs = plt.subplots(2,4,figsize=(6,14))
+
+    fits = np.zeros(len(rs))
+    errors = np.zeros(len(rs))
+    
+    for i,r in enumerate(rs):
+        p = pynbody.analysis.profile.VerticalProfile(s.s,r-.5,r+.5,3,nbins=20)
+        axs.flatten()[i].errorbar(p['rbins'],p['density']/p['density'][0],fmt='.',yerr=p['density']/p['density'][0]/np.sqrt(p['n']),label='R = %d kpc'%r)
+        
+        
+        sn = pynbody.filt.SolarNeighborhood(r-.5,r+.5,4)
+        fit,num = diskfitting.two_comp_zfit_simple(s.s[sn]['z'],0.,3.5)
+        fit2,num = diskfitting.two_comp_zfit_simple(s.s[sn]['z'],0.2,3.5,func=diskfitting.negtwoexp)
+#        res = diskfitting.mcerrors_simple_singlevar(s.s[sn]['y'],fit,0,4)
+        #fits[i] = res[:3][fit[:2].argmax()]/2.0
+        fits[i] = fit[:2].max()
+ #       errors[i] = res[-3:][fit[:2].argmax()]
+        axs.flatten()[i].plot(p['rbins'],two_sech2(p['rbins'],fit[0],fit[1],fit[2]),'--')
+        axs.flatten()[i].plot(p['rbins'],(1-fit2[2])*np.exp(-p['rbins']/fit2[0])+
+                              fit2[2]*np.exp(-p['rbins']/fit2[1]),'--')
+
+        
+        axs.flatten()[i].semilogy()
+        print fit[:2].min()/2.0,fit[:2].max()/2.0,fit[2]
+        print fit2[:2].min(),fit2[:2].max(),fit2[2]
+        print fit[:2].min()/2.0/fit2[:2].min(),fit[:2].max()/2.0/fit2[:2].max()
+
+
+#    axs[0].set_xlabel('z [kpc]')
+#    axs[0].set_ylabel(r'$\rho/\rho_{z=1}$')
+#    axs[0].semilogy()
+#    axs[0].legend(loc='upper right')
+
+#    axs[1].errorbar(rs,fits,yerr=errors,fmt='o')
+    axs.flatten()[-1].plot(rs,fits,'o')
+    axs.flatten()[-1].set_ylabel('$h_z$ [kpc]')
+    axs.flatten()[-1].set_xlabel('R [kpc]')
+    axs.flatten()[-1].set_ylim(0,1.5)
+    axs.flatten()[-1].set_xlim(3,15)
+    
+    
+def make_resolution_flare_plot(slist) : 
+    import diskfitting
+
+    flist = ['12M_hr_diff_coeff0.05/10/12M_hr_diff_coeff0.05.01000', 
+             '12M_hr_25pc_soft/10/12M_hr_25pc_soft.01000.gz', 
+             '12M_hr_100pc_soft/10/12M_hr_100pc_soft.01000.gz', 
+             '12M_hr_x0.5N/10/12M_hr_x0.5N.01000.gz', 
+             '12M_hr_x2N/10/12M_hr_x2N.01000.gz', 
+             '12M_hr_x4N/10/12M_hr_x4N.01000']
+
+    names = ['fiducial', 
+             '$h_s = 25\mathrm{~pc}$', 
+             '$h_s = 100\mathrm{~pc}$', 
+             '$0.5 N$', 
+             '$2 N$', 
+             '$4 N$']
+
+#    slist = []
+
+ #   for f in flist : 
+ #       slist.append(pynbody.load(f))
+
+#    slist = run_parallel(pynbody.load, flist, [], processes = 6)
+    
+    fig, axs = plt.subplots(2,1,figsize=(6,14))
+
+    rs = [4,6,8,10,12,14]
+
+    fits = np.zeros((len(flist),len(rs),3))
+
+    for i,s in enumerate(slist) : 
+        pynbody.analysis.angmom.faceon(s)
+        for j, r in enumerate(rs) : 
+            sn = pynbody.filt.SolarNeighborhood(r-.5,r+.5,4)
+            fit,num = diskfitting.two_sech_fit_simple(s.s[sn]['z'],0.0,4.0)
+        #res = diskfitting.mcerrors_simple_singlevar(s.s[sn]['z'],fit,0,4)
+            fits[i,j] = fit
+            print flist[i], r, fit
+
+    return fits

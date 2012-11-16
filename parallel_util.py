@@ -72,14 +72,17 @@ def run_parallel(func, single_args, repeat_args,
     if len(repeat_args) > 0:
         for arg in repeat_args: 
             args.append(itertools.repeat(arg))
-    
+        all_args = itertools.izip(single_args, *args)
+    else : 
+        all_args = single_args
+
     if processes==1 : 
-        res = map(func, itertools.izip(single_args, *args))
+        res = map(func, all_args)
 
     else : 
         pool = Pool(processes=processes)
         try : 
-            res = pool.map(func, itertools.izip(single_args, *args))
+            res = pool.map(func, all_args)
             pool.close()
 
         except KeyboardInterrupt : 

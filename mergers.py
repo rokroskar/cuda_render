@@ -1,6 +1,6 @@
 """
 
-a set of routines for analysing merger simulations
+a set of routines for the paper on migration with mergers
 
 
 Rok Roskar
@@ -20,12 +20,23 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 from matplotlib.font_manager import FontProperties
 import glob
 
-def satellite_orbit(parent_dir='./') :
+runlist_lmc = ['merge2Gyr_lmc_low',
+               'merge2Gyr_lmc_high',
+               'merge5Gyr_lmc_low',
+               'merge5Gyr_lmc_high']
+
+runlist_llmc = ['merge2Gyr_llmc_low',
+               'merge2Gyr_llmc_high',
+               'merge5Gyr_llmc_low',
+               'merge5Gyr_llmc_high']
+
+
+def satellite_orbit(parent_dir='./',plot=False, save=False) :
     import glob
     import sys
     import parallel_util
 
-    filelist = glob.glob(parent_dir+'/[5,6,7,8]/*.00???')
+    filelist = glob.glob(parent_dir+'/[2,3,4,5,6,7,8]/*.00???')
     filelist.sort()
 
     s = pynbody.load(filelist[0])
@@ -35,18 +46,35 @@ def satellite_orbit(parent_dir='./') :
     t = SimArray(np.zeros(len(filelist)), 'Gyr')
     cen = SimArray(np.zeros((len(filelist),3)), s['x'].units)
 
-    res = parallel_util.run_parallel(single_center,filelist,[inds],processes=30)
+    res = parallel_util.run_parallel(single_center,filelist,[inds],processes=20)
 
     for i in range(len(res)) : t[i], cen[i] = res[i]
+    
+    if plot:
+        plt.figure()
+        r = np.sqrt((cen**2).sum(axis=1))
+        plt.plot(t, r)
+        plt.xlabel(r'$t$ [Gyr]')
+        plt.ylabel(r'$r$ [kpc]')
 
-    plt.figure()
-    r = np.sqrt((cen**2).sum(axis=1))
-    plt.plot(t, r)
-    plt.xlabel(r'$t$ [Gyr]')
-    plt.ylabel(r'$r$ [kpc]')
+    if save : 
+        np.savez(parent_dir+'/sat_orbit.npz',t=t,cen=cen)
 
     return t, cen
 
+def make_orbits_figure() :
+    f,axs = plt.subplots(2,1,figsize=(6,14))
+    
+    for run in runlist_lmc :
+        dat = np.load(run+'/sat_orbit.npz')
+        axs[0].plot(dat['t'],np.sqrt((dat['cen']**2).sum(axis=1)),label=run.replace('_','-'))
+    axs[0].legend()
+
+    for run in runlist_llmc:
+        dat = np.load(run+'/sat_orbit.npz')
+        axs[1].plot(dat['t'],np.sqrt((dat['cen']**2).sum(axis=1)),label=run.replace('_','-'))
+    axs[1].legend()
+                    
 
 @parallel_util.interruptible
 def single_center(a) : 

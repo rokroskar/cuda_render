@@ -21,7 +21,7 @@ def expo(x,p) :
 
 ###################################
 
-def overplot_fit(p,func) : 
+def overplot_fit(p,func,xmin=0,xmax=20) : 
     x = np.linspace(0,p[1]*10,100)
     plt.plot(x,func(x,p), '--')
 

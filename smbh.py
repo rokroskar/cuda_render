@@ -226,7 +226,7 @@ def overplot_clump_centers(s,clumps,rmax,massmin) :
     if any(abs(cent) > 1e-10) : 
         s['pos'] -= cent
         clumps['pos'] -= cent
-        pyn.plot.image(s.g,width=rmax*2,av_z=True)
+        pyn.plot.image(s.g,width=rmax*2,units='Msol pc^-2')
         
 
     # else the snapshot was already centered
@@ -237,6 +237,7 @@ def overplot_clump_centers(s,clumps,rmax,massmin) :
 
     # iterate through the clumps of interest and overplot their positions
 
+        
     for clump_ind in center_clumps : 
         
         clump = s[np.where(s['grp'] == clump_ind+1)[0]]
@@ -252,13 +253,19 @@ def overplot_clump_centers(s,clumps,rmax,massmin) :
     plt.ylim(-rmax,rmax)
 
     
+def plot_clump_mass_hist(s,clumps,rmax):
+    center_clumps = np.where((clumps['r'] < rmax))[0]
+    print 'Number of clumps in the center = %d'%len(center_clumps)
+    plt.hist(np.log10(clumps[center_clumps]['mass'].in_units('Msol')))
+    plt.xlabel('mass $[\mathrm{log}(M_{\odot})]$')
+    plt.ylabel('$N$')
 def nearest_output(time, dir = './') : 
     if dir[-1] != '/' : dir += '/'
 
     try : 
         flist = np.load(dir+'filelist.npz')
     except IOError: 
-        filelist()
+        filelist(dir)
         flist = np.load(dir+'filelist.npz')
 
         

@@ -303,7 +303,7 @@ def one_d_kde(x, weights=None, range=None, gridsize=100):
 @interruptible
 def single_profile_fits(x) : 
     from pynbody.analysis.profile import Profile, VerticalProfile
-    from fitting import fit_profile, two_sech2
+    from fitting import fit_profile, two_sech2, expo
 
     filename, merger = x
 
@@ -335,7 +335,7 @@ def disk_structure_evolution(flist, merger=False) :
     v3fits = np.zeros((len(flist),4))
 
     
-    res = run_parallel(single_profile_fits, flist, [merger], processes=10)
+    res = run_parallel(single_profile_fits, flist, [merger], processes=1)
 
     for i in xrange(len(flist)) : 
         times[i]  = res[i][0]
@@ -470,7 +470,7 @@ def get_hz_grid(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), simplefit=Tr
             
     return hist, hz, hr, float('Nan'), float('Nan'),hzerr, hrerr, xs, ys, num
 
-def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(10,10), 
+def get_hz_grid_parallel(s,varx, vary, rmin,rmax,zmin,zmax,gridsize=(20,20), 
                          ncpu = int(pynbody.config['number_of_threads']), form = 'sech', get_errors = False):
     from parallel_util import run_parallel, interruptible
     
@@ -532,7 +532,7 @@ def fit_single_profile(a) :
     if fitnum > 100: 
         hr, hz, fitnum = diskfitting.two_exp_fit_simple(np.array(rxy[ind]),np.array(z[ind]),rmin,rmax,zmin,zmax,func=func)
 #        hz = np.median(np.abs(z[ind]))
-        hr = float('Nan')
+#        hr = float('Nan')
         
         if get_errors: 
             hr2, hz2, hrerr, hzerr = diskfitting.mcerrors_simple(np.array(rxy[ind]), np.array(z[ind]), 
@@ -625,11 +625,13 @@ def plot_2D_grid(s, varx, vary, varz, gridsize=(10,10)) :
 
 
 def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.5,.2)) : 
+    from scipy import polyfit 
+
     prof = pynbody.analysis.profile.Profile(s.s[limits],calc_x=lambda x: x['age'],type='log',nbins=10,min=0.1)
 
     plt.plot(prof['rbins'],
              np.sqrt(prof['vr_disp']**2+prof['vt_disp']**2+prof['vz_disp']**2),'k-',label=r'$\sigma_{tot}$',linewidth=2)
-    plt.plot(prof['rbins'],prof['vr_disp'],'k--',label=r'$\sigma_r$',linewidth=2)
+    plt.plot(prof['rbins'],prof['vr_disp'],'k--',label=r'$\sigma_R$',linewidth=2)
     plt.plot(prof['rbins'],prof['vt_disp'],'k-.',label=r'$\sigma_{\phi}$',linewidth=2)
     plt.plot(prof['rbins'],prof['vz_disp'],'k:',label=r'$\sigma_z$',linewidth=2)
 
@@ -639,4 +641,67 @@ def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.
     plt.ylabel('$\sigma$ [km/s]')
     plt.legend(loc='upper left',prop=dict(size='small'))
     
+    # fits
+    fittot = polyfit(np.log10(prof['rbins']),
+                              np.log10(np.sqrt(prof['vr_disp']**2+prof['vt_disp']**2+prof['vz_disp']**2)),1)
+    fitr = polyfit(np.log10(prof['rbins']),np.log10(prof['vr_disp']),1)
+    fitt = polyfit(np.log10(prof['rbins']),np.log10(prof['vt_disp']),1)
+    fitz = polyfit(np.log10(prof['rbins']),np.log10(prof['vz_disp']),1)
     
+    #plt.plot(prof['rbins'],10**fitr[1]*prof['rbins']**fitr[0], 'r--')
+    #plt.plot(prof['rbins'],10**fitt[1]*prof['rbins']**fitt[0], 'r--')
+    #plt.plot(prof['rbins'],10**fitz[1]*prof['rbins']**fitz[0], 'r--')
+
+    print fittot
+    print fitr
+    print fitt
+    print fitz
+    
+    
+    
+
+
+def plot_zrms_vs_r(s,rs=[2,4,6,8,10,12,14]) : 
+    pynbody.analysis.angmom.faceon(s)
+
+    f, ax = plt.subplots()
+
+    zrms = np.zeros(len(rs))
+
+    for i,r in enumerate(rs) : 
+
+#        p = pynbody.analysis.profile.VerticalProfile(s.s, r-.5,r+.5,3.0,nbins=30)
+        
+        ind = np.where((s.s['rxy'] < r+.5) & (s.s['rxy'] > r-.5))[0]
+        zrms[i] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
+
+    ax.plot(rs, zrms, 'o')
+    ax.set_xlabel('R [kpc]')
+    ax.set_ylabel('$z_{rms}$')
+    ax.set_ylim(0,1)
+    ax.set_xlim(0,15)
+        
+def compare_zrms_vs_r(slist, names, rs = [2,4,6,8,10,12,14], agefilt = pynbody.filt.BandPass('age',0,10), ax = None):
+    if ax is None: 
+        fig, ax = plt.subplots()
+    
+    for j,s in enumerate(slist) : 
+        
+        pynbody.analysis.angmom.faceon(s)
+
+        zrms = np.zeros(len(rs))
+
+        for i,r in enumerate(rs) : 
+            rfilt = pynbody.filt.BandPass('rxy', r-.5, r+.5)
+            sfilt = s.s[agefilt&rfilt]
+            zrms[i] = np.sqrt((sfilt['z']**2).sum()/len(sfilt))
+
+        ax.plot(rs, zrms, 'o', label=names[j])
+    
+    ax.set_xlabel('R [kpc]')
+    ax.set_ylabel('$z_{rms}$')
+    ax.set_ylim(0,1)
+    ax.set_xlim(0,15)
+    ax.legend(loc='upper left')
+
+        
