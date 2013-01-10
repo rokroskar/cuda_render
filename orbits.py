@@ -57,7 +57,7 @@ def single_file_pos(file, pinds, family) :
             pos[good] = subs[pinds[good]]['pos']
             vel[good] = subs[pinds[good]]['vel']
 
-        return np.array(pos), np.array(vel), np.array(mass), np.array(phi), s.properties['a']
+        return np.array(pos), np.array(vel), np.array(mass), np.array(phi), s.properties['time']
 
     except KeyboardInterrupt: 
         raise KeyboardInterruptError()

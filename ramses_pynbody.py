@@ -2,6 +2,7 @@ import pynbody,sys
 import numpy as np
 import matplotlib.pylab as plt
 from matplotlib import cm
+import isolated as iso
 
 
 def write_paramfile(stepnum):
@@ -86,8 +87,8 @@ def make_pretty_picture(outputname, s = None):
     if s is None: 
         s = load_center(outputname)
         
-    st = s[pynbody.filt.Sphere(120)]
-    make_multiple_snapshot_images([st],20,vgmin=21,vgmax=25.5,vsmin=-15,vsmax=-10.)
+    st = s[pynbody.filt.Sphere('120 kpc')]
+    make_multiple_snapshot_images([st],20)#,vgmin=21,vgmax=25.5,vsmin=-15,vsmax=-10.)
     
     return s, st
 
@@ -117,13 +118,51 @@ def make_comparison_figure(dirlist,names):
 def load_center(output):
     s = pynbody.load(output)
     hop_center(s)
-    s.physical_units()
-    st = s[pynbody.filt.Sphere(120)]
-    pynbody.analysis.angmom.sideon(st.g,disk_size='5 kpc',mode='ssc')
-    s.s['age'] = s._info['time'] - s.s['age']
-    s.s['age']*=s._info['unit_t']
-    s.s['age'].units = 's'
-    old = np.where(s.s['age'].in_units('Myr') > 10)[0]
-    s.s['oldmass'] = s.s['mass']
-    s.s['mass'][old] *= s.s['age'].in_units('Myr')[old]**(-.7)
+#    s.physical_units()
+    st = s[pynbody.filt.Sphere('100 kpc')]
+    
+    cen = pynbody.analysis.halo.center(st,retcen=True,mode='ssc')
+    pynbody.analysis.angmom.faceon(st.g,disk_size='5 kpc',cen=cen,mode='ssc')
+   # s.s['age'] = s._info['time'] - s.s['age']
+   # s.s['age']*=s._info['unit_t']
+   # s.s['age'].units = 's'
+   # old = np.where(s.s['age'].in_units('Myr') > 10)[0]
+   # s.s['oldmass'] = s.s['mass']
+   # s.s['mass'][old] *= s.s['age'].in_units('Myr')[old]**(-.7)
+
+    s['pos'].convert_units('kpc')
+    s['vel'].convert_units('km s^-1')
+
     return s
+
+@pynbody.ramses.RamsesSnap.derived_quantity
+def tform(self) : 
+    from scipy.io.numpyio import fread
+
+    top = self
+    while hasattr(top,'base') : top = self.base
+
+    ncpu = top._info['ncpu']
+    nstar = len(top.s)
+
+    top.s['tform'] = -1.0
+    done = 0
+    for i in range(ncpu) : 
+        f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+        n = fread(f,1,'i')
+        n /= 8
+        ages = fread(f,n,'d')
+        new = np.where(ages > 0)[0]
+        top.s['tform'][done:done+len(new)] = ages[new]
+        done += len(new)
+        f.close()
+    top.s['tform'].units = 'Gyr'
+
+    return self.s['tform']
+
+
+
+    
+
+    
+    

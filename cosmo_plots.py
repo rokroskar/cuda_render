@@ -258,34 +258,34 @@ def make_multiple_snapshot_images(slist,x2=100,vsmin=3.5,vsmax=10,vgmin=6.2,vgma
     ax = plt.axes((0,0,1,1))
 
     for s in slist:
-        
+        dir = s.filename.split('/')[0]
         im = pynbody.sph.threaded_render_image(s.s,kernel=pynbody.sph.Kernel2D(),
                                                x2=x2,nx=1024,ny=819,num_threads=20)
 
         logim = np.log10(im)
         logim[logim == float('-inf')] = logim[logim>float('-inf')].min()
 
-        plt.imshow(logim,cmap=plt.cm.Greys_r, vmin=vsmin,vmax=vsmax)
+        plt.imshow(logim,cmap=plt.cm.Greys_r)#, vmin=vsmin,vmax=vsmax)
 
         for line in ax.get_xticklines() + ax.get_yticklines():
             line.set_markersize(0)
 
-        plt.savefig("images/%.2fGyr_star.png"%age(s),format='png')
+        plt.savefig(dir+"/images/%.2fGyr_star.png"%age(s),format='png')
 
         im = pynbody.sph.threaded_render_image(s.g,kernel=pynbody.sph.Kernel2D(),
                                                x2=x2,nx=1024,ny=819,num_threads=20)
 
-        plt.imshow(np.log10(im),cmap=plt.cm.Greys_r,vmin=vgmin,vmax=vgmax)
+        plt.imshow(np.log10(im),cmap=plt.cm.Greys_r)#,vmin=vgmin,vmax=vgmax)
 
-        plt.savefig("images/%.2fGyr_gas.png"%age(s),format='png')
+        plt.savefig(dir+"/images/%.2fGyr_gas.png"%age(s),format='png')
 
         
         # make the composite image
 
-        system("mogrify -fill gold -tint 50 -transparent black -gamma .7 +contrast +contrast +contrast images/%.2fGyr_star.png"%age(s))
-        system("mogrify -fill blue -tint 50 images/%.2fGyr_gas.png"%age(s))
+        system("mogrify -fill gold -tint 50 -transparent black -gamma .7 +contrast +contrast +contrast %s/images/%.2fGyr_star.png"%(dir,age(s)))
+        system("mogrify -fill blue -tint 50 %s/images/%.2fGyr_gas.png"%(dir,age(s)))
 
-        system("convert images/%.2fGyr_star.png images/%.2fGyr_gas.png -compose blend -define compose:args=100 -composite composites/composite%.2fGyr.png"%(age(s),age(s),age(s)))
+        system("convert %s/images/%.2fGyr_star.png %s/images/%.2fGyr_gas.png -compose blend -define compose:args=100 -composite %s/composites/composite%.2fGyr.png"%(dir,age(s),dir,age(s),dir,age(s)))
         
        # system("mogrify -median 2 composites/composite%.2fGyr.png"%age(s))
         

@@ -93,16 +93,32 @@ def get_rform(sim) :
     sim['rform'] = np.sqrt(np.sum(sim['posform'][:,0:2]**2,axis=1))
     sim['jzform'] = sim['xform']*sim['vyform']-sim['vxform']*sim['yform']
 
-def get_jzmax(s) : 
+@pynbody.snapshot.SimSnap.derived_quantity
+def jzmaxr(self) : 
+    """
+    Calculate the maximum angular momentum given the star's radius
+    """
+    from scipy import interp
+    top = self
+    while hasattr(top,'base'): top = top.base
+
+    prof = pynbody.analysis.profile.Profile(top,max='100 kpc', min = '.001 kpc', type = 'log', nbins = 100)
+    return interp(self['rxy'], prof['rbins'], prof['j_circ'])
+
+@pynbody.snapshot.SimSnap.derived_quantity
+def jzmaxe(self) : 
     """
     Calculate the maximum angular momentum given the star's energy
     """
     from scipy import interp
+    top = self
+    while hasattr(top,'base'): top = top.base
 
     disk = pynbody.filt.Disc('50 kpc', '500 pc')
-    prof = pynbody.analysis.profile.Profile(s, nbins = 100, type = 'log', min = 0.01, max = 100)
-    s.s['jzmax'] = interp(s.s['te'], prof['E_circ'], prof['j_circ'])
-    s.s['jz/jc'] = s.s['jz']/s.s['jzmax']
+    prof = pynbody.analysis.profile.Profile(top, nbins = 100, 
+                                            type = 'log', min = '0.01 kpc', max = '100 kpc')
+    return interp(self['te'], prof['E_circ'], prof['j_circ'])
+    
     
     
 def get_cofm(dir='./', filepattern='*/*.0????') : 
@@ -137,7 +153,7 @@ def get_cofm(dir='./', filepattern='*/*.0????') :
     np.savez('cofm.npz', cofm = cofms, times = times)
     
 
-def get_cofm_parallel(dir='./', filepattern='*/*.0????', filelist = None, block = True, procs = pynbody.config['number_of_threads']) : 
+def get_cofm_parallel(dir='./', filepattern='*/*.00???', filelist = None, block = True, procs = pynbody.config['number_of_threads']) : 
     """
 
     A parallel version of get_cofm() -- uses the IPython load balanced view
@@ -196,12 +212,12 @@ def get_cofm_single_file(args) :
 
     """
 
-    name = args[0]
+    name = args
 
     s = pynbody.load(name)
 
     time = s.properties['time'].in_units('Gyr')
-    cofm = pynbody.analysis.halo.center(s, retcen=True)
+    cofm = pynbody.analysis.halo.center(s, mode='hyb', retcen=True)
     s.ancestor['pos']-=cofm
     vcofm = pynbody.analysis.halo.vel_center(s.s,retcen=True)
 

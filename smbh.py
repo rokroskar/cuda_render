@@ -67,7 +67,7 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     if dir[-1] != '/' : dir += '/'
 
-    flist = glob.glob(dir+'*/*.0????')
+    flist = glob.glob(dir+'6/*.0???0')
     flist.sort(key=lambda x: x[-5:])
     print flist[0:10]
 

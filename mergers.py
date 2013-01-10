@@ -30,6 +30,24 @@ runlist_llmc = ['merge2Gyr_llmc_low',
                'merge5Gyr_llmc_low',
                'merge5Gyr_llmc_high']
 
+runlist_all = runlist_lmc + runlist_llmc
+
+lmc_titles = []
+for run in runlist_lmc : 
+    lmc_titles.append(run.replace('_','-'))
+
+llmc_titles = []
+for run in runlist_llmc : 
+    llmc_titles.append(run.replace('_','-'))
+
+titles_all = lmc_titles + llmc_titles
+ 
+def load_runs(runlist=runlist_all) : 
+    slist = []
+    for i,f in enumerate(runlist) : 
+        slist.append(pynbody.load(f+'/10/'+f+'.01000'))
+        pynbody.analysis.angmom.faceon(slist[i])
+    return slist
 
 def satellite_orbit(parent_dir='./',plot=False, save=False) :
     import glob
@@ -62,19 +80,8 @@ def satellite_orbit(parent_dir='./',plot=False, save=False) :
 
     return t, cen
 
-def make_orbits_figure() :
-    f,axs = plt.subplots(2,1,figsize=(6,14))
-    
-    for run in runlist_lmc :
-        dat = np.load(run+'/sat_orbit.npz')
-        axs[0].plot(dat['t'],np.sqrt((dat['cen']**2).sum(axis=1)),label=run.replace('_','-'))
-    axs[0].legend()
 
-    for run in runlist_llmc:
-        dat = np.load(run+'/sat_orbit.npz')
-        axs[1].plot(dat['t'],np.sqrt((dat['cen']**2).sum(axis=1)),label=run.replace('_','-'))
-    axs[1].legend()
-                    
+
 
 @parallel_util.interruptible
 def single_center(a) : 
@@ -91,7 +98,15 @@ def single_center(a) :
 
     
 
+def get_tform(s,si,mcut,tcut) :
+    starlog = s.filename.split('/')[0]+'/'+s.filename.split('/')[0]+'.starlog'
+    sat = np.where((s.s['mass'] <= mcut))[0]
+    old = np.where(si.s['tform'] <= tcut)[0]
+    sl = pynbody.tipsy.StarLog(starlog)
+    s.s['tform'][sat[-1]+1:] = sl['tform']
+    s.s['tform'][0:sat[0]] = si.s['tform'][old]
     
+
 
 def combine_starlog(sim1, sim2, starlog1, starlog2, tcut, mcut) : 
     """
@@ -124,14 +139,15 @@ def combine_starlog(sim1, sim2, starlog1, starlog2, tcut, mcut) :
 
     sl_new._num_particles = len(sim1.s)
     print len(sl_new)
-    sl_new._family_slice = {pynbody.family.star: slice(0,len(sl1.s))}
+    sl_new._family_slice = {pynbody.family.star: slice(0,len(sim1.s))}
 
     sl_new._create_arrays(['tform','massform','rhoform','tempform'],dtype='float64')
     sl_new._create_arrays(['pos','vel'],3,dtype='float64')
     sl_new._create_arrays(['iord', 'iorderGas'], dtype='int32')
 
     old = (np.where((sim1.s['mass'] >= mcut)&(sim1.s['tform'] <= tcut))[0])
-    old2 = (np.where(sl2['tform'] <= tcut))[0]
+    old2 = (np.where(sim2.s['tform'] <= tcut))[0]
+    sat = (np.where(sim1.s['mass'] < mcut)[0])
 
     assert((old == old2).all())
 
@@ -142,277 +158,402 @@ def combine_starlog(sim1, sim2, starlog1, starlog2, tcut, mcut) :
     for arr in ['pos','vel','tform','massform','rhoform','tempform','iord','iorderGas'] : 
         sl_new[arr][old] = np.array(sl2[arr][old],dtype=sl_new[arr].dtype)
         sl_new[arr][new] = np.array(sl1[arr],sl_new[arr].dtype)
-        
+        if 'iord' not in arr : sl_new[arr][sat] = np.nan
 
-    sl_new['iord'][old] = sim1.s['iord'][old]
-    sl_new['iord'][new] = sim1.s['iord'][new]
-
+    sl_new['iord'] = sim1.s['iord']
+    #sl_new['iord'][new] = sim1.s['iord'][new]
+    #sl_new['iord']
+#    import pdb; pdb.set_trace()
     sl_new.write(filename=starlog1)
     print len(sl_new)
 
+
+def get_rform(si,so,tcut,nbins=200,mcut=.05,plots=False):
+    from matplotlib.backends.backend_pdf import PdfPages
+    s = so.s[pynbody.filt.HighPass('mass',mcut)]
+    old = pynbody.filt.LowPass('tform',tcut)
+    cenfilt = pynbody.filt.LowPass('r','5 kpc')
+
+    if plots:
+        pp = PdfPages('alignments.pdf')
+        plt.ioff()
+    bin_edges = np.linspace(np.min(s.s['tform']),
+                            np.max(s.s['tform']),nbins+1)
+    bins = .5*(bin_edges[1:]+bin_edges[:-1])
+    cens  = np.zeros((nbins,3))*np.nan
+    vcens = np.zeros((nbins,3))*np.nan
+    js = np.zeros((nbins,3))*np.nan
+
+    
+    news = pynbody.new(stars=len(s.s))
+    news.s['mass'] = s.s['massform']
+    for i, arr in enumerate(['x','y','z']): 
+        news.s[arr] = s.s['posform'][:,i]
+        news.s['v'+arr] = s.s['velform'][:,i]
+    news.s['tform']=s.s['tform']
+    news.properties={'z':0,'a':1.0}
+
+    # get center of mass for each bin using shrinking spheres
+    print "Finding center positions"
+    for ibe,below in enumerate(bin_edges[:-1]):
+        tstars = news.s[pynbody.filt.BandPass('tform',below,bin_edges[ibe+1])]
+        if len(tstars) > 0:
+            cens[ibe]=pynbody.analysis.halo.center(tstars,mode='ssc',retcen=True)
+        print below, cens[ibe]
+#        import pdb; pdb.set_trace()
+
+    print "Setting positions according to new centers"
+    for i, arr in enumerate(['x','y','z']) : 
+        news.s[arr] -= np.interp(news.s['tform'],bins,cens[:,i])
+
+#    plt.plot(news.s['tform'].in_units('Gyr'),np.interp(news.s['tform'].in_units('Gyr'),bins,cens[:,0]),'.')
+#    plt.plot(bins,cens[:,0])
+
+    #import pdb; pdb.set_trace()
+
+    print "Finding centers of mass velocities"
+    for ibe,below in enumerate(bin_edges[:-1]):
+        tstars = news.s[pynbody.filt.BandPass('tform',str(below)+' Gyr',str(bin_edges[ibe+1])+' Gyr')]
+        if len(tstars[cenfilt]) > 5:
+            vcens[ibe]=pynbody.analysis.halo.vel_center(tstars[cenfilt],retcen=True,cen_size='5 kpc')
+        #else:
+            #import pdb; pdb.set_trace()
+
+    goodvcen = np.isfinite(vcens).all(axis=1)
+    print "Setting velocities"
+    for i, arr in enumerate(['x','y','z']) : 
+        news.s['v'+arr] -= np.interp(news.s['tform'],bins[goodvcen],vcens[goodvcen,i])
+
+    r_array = news.s['r']
+    print "Rotating angular momenta"
+    for ibe,below in enumerate(bin_edges[:-1]):
+        tstars = news.s[pynbody.filt.BandPass('tform',below,bin_edges[ibe+1])]
+        if ((len(tstars[cenfilt]) > 5) & np.isfinite(vcens[ibe]).all()):
+            js[ibe] = pynbody.analysis.angmom.ang_mom_vec(tstars[cenfilt])
+            trans = pynbody.analysis.angmom.calc_faceon_matrix(js[ibe])
+
+            jstars = news.s[pynbody.filt.BandPass('tform',below,bin_edges[ibe+1])]
+            jstars.transform(trans)
+            if plots:
+                f,ax = plt.subplots(1,3)
+                ax[0].plot(jstars['x'].in_units('kpc'),jstars['y'].in_units('kpc'),'.')
+                ax[1].plot(jstars['x'].in_units('kpc'),jstars['z'].in_units('kpc'),'.')
+                ax[2].plot(jstars['y'].in_units('kpc'),jstars['z'].in_units('kpc'),'.')
+                for a in ax:
+                    a.set_aspect('equal')
+                    a.set_xlim(-25,25)
+                    a.set_ylim(-25,25)
+                pp.savefig()
+                plt.clf()
+                plt.close()
+
+    s.s['rxyform'] = news.s['rxy']
+    s.s[old]['rxyform'] = si.s[old]['rform']
+    s.s['rxyform'].write(overwrite=True)
+    
+    if plots:
+        pp.close()    
+ #   news.write(filename='new.starlog.tipsy',fmt=pynbody.tipsy.TipsySnap)
+    import pickle
+    pickle.dump({'cen':cens,'j':js, 't':bins},open(so.filename+'.jcen','w'))
+
+def two_sech2(xs,scale1=1.0,scale2=2.0,f=0.5) : 
+    return (1.-f)*np.cosh(xs/scale1)**-2+f*np.cosh(xs/scale2)**-2
+
+def get_hz_vs_r(s,rs,write=True) : 
+    import diskfitting
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    up = s
+
+    while hasattr(up,'base') : 
+        up = up.base
+    filename = up.filename
+
+    pp = PdfPages(filename+'.scaleheights.pdf')
+    plt.ioff()
+
+    f = plt.figure()
+
+    h1 = np.zeros(len(rs))
+    h2 = np.zeros(len(rs))
+    frac = np.zeros(len(rs))
+    n = np.zeros(len(rs))
+    errors = np.zeros(len(rs))
+        
+    print 'getting scale heights for %s'%s.filename 
+    for i, r in enumerate(rs) : 
+        sn = pynbody.filt.SolarNeighborhood(r-.5,r+.5,5)
+        zrms = np.sqrt((s.s[sn]['z']**2).sum()/len(s.s[sn]))
+        fit,num = diskfitting.two_comp_zfit_simple(s.s[sn]['z'],0.,zrms*5.0)
+        print zrms
+        h1[i] = fit[:2].min()
+        h2[i] = fit[:2].max()
+        frac[i] = fit[2]
+        n[i] = num
+        print r, h1[i], h2[i], frac[i]
+        
+        p = pynbody.analysis.profile.VerticalProfile(s.s[sn],r-.5,r+.5,5,nbins=20)
+        plt.errorbar(p['rbins'],p['density']/p['density'][0],fmt='.',yerr=p['density']/p['density'][0]/np.sqrt(p['n']),label='R = %d kpc'%r)
+        plt.plot(p['rbins'],two_sech2(p['rbins'],fit[0],fit[1],fit[2]),'--')
+        plt.semilogy()
+        pp.savefig()
+        plt.clf()
+        
+        
+    h1 /= 2.0
+    h2 /= 2.0
+    pp.close()
+    if write : 
+        np.savez(s.filename+'.scaleheights.npz', h1=h1,h2=h2,frac=frac,n=n,rs=rs)
+
+    return h1,h2,frac,n
 
 ###########################
 # Routines for making plots
 ###########################
 
+def make_orbits_figure() :
+    f,axs = plt.subplots(2,1,figsize=(10,14))
+    
+    for i,run in enumerate(runlist_all) :
+        dat = np.load(run+'/sat_orbit.npz')
+        
+        if i < 4: row = 0
+        else : row = 1
+        axs[row].plot(dat['t'],np.sqrt((dat['cen']**2).sum(axis=1)),label=titles_all[i],color=get_color(i,len(runlist_all)))
+
+    for ax in axs : 
+        ax.legend(frameon=False,prop=dict(size=16))
+        ax.set_xlabel('$r$ [kpc]')
+        ax.set_ylabel('$t$ [Gyr]')
+
+                    
 
 def make_image_figure(si,sm_list, titles) : 
 
-    
-    fig = plt.figure(figsize=(20,len(sm_list)*5))
     ncol = 4
-    nrow = len(sm_list)+1
-
+    nrow = len(sm_list)/2+1
+    fig = plt.figure(figsize=(9.5,12))
     
+    vmin, vmax = 4,9
+    width=25
+    axs = []
 
-    vmin, vmax = 6, 12
+# make the isolated panels
+
+    ax = fig.add_subplot(nrow,ncol,1)
+    pynbody.plot.image(si.s,width=width,av_z=True,threaded=True,
+                       subplot=ax,show_cbar=False,vmin=vmin,vmax=vmax,
+                       qty='i_lum_den',cmap=plt.cm.Greys_r)
+    ax.set_title('isolated',fontsize=14)
+    axs.append(ax)
     
-    for i,s in [si]+sm_list : 
+    ax = fig.add_subplot(nrow,ncol,2)
+    si.rotate_x(90)
+    pynbody.plot.image(si.s,width=width,av_z=True,threaded=True,subplot=ax,
+                       show_cbar=False, vmin=vmin,vmax=vmax,
+                       qty='i_lum_den', cmap=plt.cm.Greys_r)
+
+    si.rotate_x(-90)
+    axs.append(ax)
+
+    for i,s in enumerate(sm_list) : 
         pynbody.analysis.angmom.faceon(s)
 
-        inds_old = np.where(s.s['mass'] > .1)[0]
-        inds_sat = np.where(s.s['mass'] < .1)[0]
-
-
-        ax = fig.add_subplot(i+1,ncol,1)
-        pynbody.plot.image(s.s[inds_old],width=29,units='Msol kpc^-2',threaded=True,
-                           subplot=ax,colorbar=False,vmin=vmin,vmax=vmax)
-        ax.set_title(titles[i])
+        inds_old = np.where(s.s['mass'] > .05)[0]
+        inds_sat = np.where(s.s['mass'] < .05)[0]
         
-        ax = fig.add_subplot(i+1,ncol,2)
+        if len(inds_sat) > 0 :
+            s.s[inds_sat]['tform'] = .01
+            
+        if i < 4 : 
+            index = i*4+5
+        else : 
+            index = (i-4)*4+7
+
+        ax = fig.add_subplot(nrow,ncol,index)
+        pynbody.plot.image(s.s[inds_old],width=width,av_z=True,threaded=True,
+                           subplot=ax,show_cbar=False,vmin=vmin,vmax=vmax,
+                           qty='i_lum_den',cmap=plt.cm.Greys_r)
+        ax.set_title(titles[i],fontsize=14)
+        axs.append(ax)
+
+        ax = fig.add_subplot(nrow,ncol,index+1)
         s.rotate_x(90)
-        pynbody.plot.image(s.s[inds_old],width=29,units='Msol kpc^-2',threaded=True,subplot=ax,colorbar=False,
-                       vmin=vmin,vmax=vmax)
-        ax.set_ylabel('$z/\\mathrm{kpc}$')
-        
+        pynbody.plot.image(s.s[inds_old],width=width,av_z=True,threaded=True,subplot=ax,
+                           show_cbar=False, vmin=vmin,vmax=vmax,
+                           qty='i_lum_den', cmap=plt.cm.Greys_r)
 
-        if i > 0 : 
+        axs.append(ax)
+
+        #if i > 0 : 
             # merger runs -- show satellite star distributions
             # faceon
-            ax = fig.add_subplot(i+1,ncol,3)
+        #    ax = fig.add_subplot(nrow,ncol,i*ncol+3)
 
-            s.rotate_x(-90)
+#            s.rotate_x(-90)
         
-            pynbody.plot.image(s.s[inds_sat],width=29,units='Msol kpc^-2',threaded=True,
-                               subplot=ax,colorbar=False, vmin=vmin,vmax=vmax)
-            ax.set_title(titles[i] + ' in-situ')
-            
+#            pynbody.plot.image(s.s[inds_sat],width=29,av_z=True,threaded=True,
+#                               subplot=ax,show_cbar=False, vmin=vmin,vmax=vmax,
+#                               qty='i_lum_den',cmap=plt.cm.Greys_r)
+#            if i == 1:
+#                ax.set_title('accreted',fontsize=14)
+#            axs.append(ax)
+
             # sideon
-            ax = fig.add_subplot(i+1,ncol,4)
-            s.rotate_x(90)
-            pynbody.plot.image(s.s[inds_sat],width=29,units='Msol kpc^-2',threaded=True,
-                               subplot=ax,colorbar=False)
-            ax.set_ylabel('$z/\\mathrm{kpc}$')
-                           
+#            ax = fig.add_subplot(nrow,ncol,i*ncol+4)
+#            s.rotate_x(90)
+#            pynbody.plot.image(s.s[inds_sat],width=29,av_z=True,threaded=True,
+#                               subplot=ax,show_cbar=False,vmin=vmin,vmax=vmax,
+#                               qty='i_lum_den',cmap=plt.cm.Greys_r)
+#            ax.set_ylabel('$z/\\mathrm{kpc}$',fontsize=14)
+#            axs.append(ax)
         # reset to faceon
         s.rotate_x(-90)
     
-
-
-def make_radial_profile(si,sm) : 
-
-    fig = plt.figure(figsize=(8,10))
-
-    #grid = ImageGrid(fig,111,(2,1), label_mode="L", axes_pad=.2, direction='column')
-
-    inds_old = np.where(sm.s['mass'] > .1)[0]
-    inds_sat = np.where(sm.s['mass'] < .1)[0]
-
-    
-    # make the profile objects
-    pynbody.analysis.angmom.faceon(si)
-    pynbody.analysis.angmom.faceon(sm)
-    pi = pynbody.analysis.profile.Profile(si.s,max=15,nbins=30,ndim=2)
-    pm_old = pynbody.analysis.profile.Profile(sm.s[inds_old],max=15,nbins=30,ndim=2)
-    pm_sat = pynbody.analysis.profile.Profile(sm.s[inds_sat],max=15,nbins=30,ndim=2)
-
-    #params = {'font.family': 'serif',
-    #          'font.serif': ['Times','Utopia']}
-    #plt.rcParams.update(params)
-
-    # plot the density profiles
-    ax = plt.subplot(311)
-
-    plt.plot(pi['rbins'],pi['density'].in_units('Msol kpc^-2'),label='isolated')
-    plt.ylabel('$\Sigma_{\star}~\mathrm{[M_{\odot}~kpc^{-2}]}$')
-    
-    plt.plot(pm_old['rbins'],pm_old['density'].in_units('Msol kpc^-2'),label='merger in-situ')
-    plt.plot(pm_sat['rbins'],pm_sat['density'].in_units('Msol kpc^-2'),label='merger satellite')
-    plt.semilogy()
-    plt.xlim(0,15)
-    plt.legend(prop=FontProperties(size='small'))
-    ax.set_xticklabels("")
-
-    # plot the age profiles
-    ax = plt.subplot(312)
-    
-    plt.plot(pi['rbins'],pi['age'].in_units('Gyr'),label='isolated')
-    plt.ylabel('Age [Gyr]')
-    plt.xlim(0,15)
-    plt.plot(pm_old['rbins'],pm_old['age'].in_units('Gyr'),label='merger in-situ')
-    ax.set_xticklabels("")
-    fig.subplots_adjust(hspace=0.05)
-    
-
-
-    # plot the dispersion profiles
-    ax = plt.subplot(313)
-    plt.plot(pi['rbins'],pi['vr_disp'],'b-')
-    plt.plot(pi['rbins'],pi['vt_disp'],'b--')
-    plt.plot(pi['rbins'],pi['vz_disp'],'b-.')
-
-    plt.plot(pm_old['rbins'],pm_old['vr_disp'],'g-')
-    plt.plot(pm_old['rbins'],pm_old['vt_disp'],'g--')
-    plt.plot(pm_old['rbins'],pm_old['vz_disp'],'g-.')
-
-    plt.ylabel(r'$\sigma_{r,\phi,z}$')
-    plt.xlabel('$R$ [kpc]')
-
-def make_vertical_profiles(si,sm) : 
-
-    fig = plt.figure(figsize=(8,10))
-
-    #grid = ImageGrid(fig,111,(2,1), label_mode="L", axes_pad=.2, direction='column')
-
-    inds_old = np.where(sm.s['mass'] > .1)[0]
-    inds_sat = np.where(sm.s['mass'] < .1)[0]
-
-    pynbody.analysis.angmom.faceon(si)
-    pynbody.analysis.angmom.faceon(sm)
-
-    pi = pynbody.analysis.profile.VerticalProfile(si.s,7,8,3.0,nbins=30,ndim=3)
-    pm_old = pynbody.analysis.profile.VerticalProfile(sm.s[inds_old],7,8,3.0,nbins=30,ndim=3)
-    pm_sat = pynbody.analysis.profile.VerticalProfile(sm.s[inds_sat],7,8,3.0,nbins=30,ndim=3)
-
-    ax = plt.subplot(211)
-
-    plt.plot(pi['rbins'],pi['density']/pi['density'][0],label='isolated')
-    plt.plot(pm_old['rbins'],pm_old['density']/pm_old['density'][0],label='merger in-situ')
-    plt.plot(pm_sat['rbins'],pm_sat['density']/pm_old['density'][0],label='merger satellite')
-    plt.legend(prop=FontProperties(size='small'))
-    ax.set_xticklabels("")
-    ax.set_ylabel(r'$\rho_{\star}/\rho_0$')
-    ax.semilogy()
-    ax = plt.subplot(212)
-    
-    plt.plot(pi['rbins'],pi['vz_disp'].in_units('km s^-1'),label='isolated')
-    plt.plot(pm_old['rbins'],pm_old['vz_disp'].in_units('km s^-1'),label='merger in-situ')
-    plt.plot(pm_sat['rbins'],pm_sat['vz_disp'].in_units('km s^-1'),label='merger satellite')
-    
-    ax.set_xlabel(r'$z$ [kpc]')
-    ax.set_ylabel(r'$\sigma_{v_z}$ [km/s]')
-    
-def make_fourier_comparison(dir1,dir2,dir3) : 
-
-    data1 = np.load(dir1+'/complete_fourier_fulldisk.npz')
-    data2 = np.load(dir2+'/complete_fourier_fulldisk.npz')
-    data3 = np.load(dir3+'/complete_fourier_fulldisk.npz')
-
-    plt.figure()
-    
-    plt.plot(data1['t'],abs(data1['c'][:,2,0]),label='isolated')
-    plt.plot(data2['t'][0::10],abs(data2['c'][0::10][:,2,0]),label='merger low')
-    plt.plot(data3['t'][0::10],abs(data3['c'][0::10][:,2,0]),label='merger high')
-    plt.xlabel(r'$t$ [Gyr]')
-    plt.ylabel(r'$A_2$')
-    plt.legend(loc='upper left')
-
-    
-def angular_momentum_vector(dir1) : 
-    
-    flist = glob.glob(dir1+'[1-9]/*.0??01')
-    flist.sort()
-    flist.append(glob.glob(dir1+'10/*.0??00')[0])
-
-    jvec = np.zeros((len(flist),3))
-
-    for i,filename in enumerate(flist) : 
-        s = pynbody.load(filename)
-        pynbody.analysis.halo.center(s)
-
-        f = pynbody.filt.Disc(4.0,.2) #& pynbody.filt.LowPass('temp',5e4)
-
-        jvec[i] = pynbody.analysis.angmom.ang_mom_vec(s.g[f])
-
-    return jvec, np.arcsin(jvec[:,2]/np.sqrt((jvec**2).sum(axis=1)))*180./np.pi
-
-
-def plot_compare_rform(outs, labels=None): 
-    import matplotlib.pylab as plt
-    import os
-
-    sims = []
-
-#    sn = pynbody.filt.SolarNeighborhood(7,8,.5)
-    sn = pynbody.filt.Annulus(7,8)
-    main = pynbody.filt.HighPass('mass', 0.1)
-
-    plt.figure(figsize=(8,10))
-    
-    for i,s in enumerate(outs) : 
-        #s = pynbody.load(out)
-        
-        pynbody.analysis.halo.center(s)
-        pynbody.analysis.angmom.faceon(s)
-        
-        iso.get_rform(s.s)
-        
-        if labels is not None:
-            label = labels[i]
+    for i,ax in enumerate(axs):
+        if i != len(axs)-10:
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+            ax.set_yticklabels('')
+            ax.set_xticklabels('')
         else : 
-            label = ''
-        print 'total stars'
-        print len(s.s[sn&main])
-        
-        ax = plt.subplot(211)
-        plt.hist(s.s[sn&main]['rform'], bins = 50, range=[0,15], label=label,normed=True,histtype='step')
-        plt.xlim(0,12)
-        ax.set_xticklabels("")
-        plt.subplot(212)
-        plt.hist(s.s[sn&main]['rform'], bins = 50, range=[0,15], label=label,normed=True,histtype='step',
-                 cumulative=True)
-        plt.xlim(0,12)
+            for tl in ax.get_yticklabels()+ax.get_xticklabels():
+                tl.set_fontsize(14)
 
-    plt.xlabel(r'$R_{form}$ [kpc]')
- 
-    plt.legend(loc = 'upper left', prop=FontProperties(size='small'))
+    plt.subplots_adjust(wspace=.01)
 
+def make_profile_comparison_figure(si,slist) : 
+    f,axs = plt.subplots(2,2,figsize=(10,10))
 
-def make_rform_rfinal_figs(s1,s2,vmin=1e-3,vmax=.1) : 
+    rs = [8,12]
 
-    plt.figure(figsize=(15,4))
+    p = pynbody.analysis.profile.Profile(si.s, min=.01,max=15,nbins=30)
+    pv1 = pynbody.analysis.profile.VerticalProfile(si.s, rs[0]-.5,rs[0]+.5,3,nbins=20)
+    pv2 = pynbody.analysis.profile.VerticalProfile(si.s, rs[1]-.5,rs[1]+.5,3,nbins=20)
+    #pv3 = pynbody.analysis.profile.VerticalProfile(si.s, rs[2]-.5,rs[2]+.5,5,nbins=20)
+                                         
+    for i in range(2) : 
+        axs[0,i].plot(p['rbins'],p['density'].in_units('Msol kpc^-2'),'k-',label='isolated')
+        axs[1,i].plot(pv1['rbins'],pv1['density'].in_units('Msol kpc^-3'),'k-',label='%d kpc'%rs[0])
+        axs[1,i].plot(pv2['rbins'],pv2['density'].in_units('Msol kpc^-3'),'k--',label='%d kpc'%rs[1])
+        axs[0,i].set_xlabel('$R$ [kpc]')
+        axs[1,i].set_xlabel('$z$ [kpc]')
+        axs[0,i].set_ylim(1e5,1e11)
+        axs[0,i].set_xlim(0,14.9)
+        axs[1,i].set_ylim(1e4,1e9)
+        axs[1,i].set_xlim(0,2.9)
 
-    ax = plt.subplot(131)
-
-    g1, x1, y1 = pynbody.plot.generic.prob_plot(s1.s['rxy'],s1.s['rform'],s1.s['mass'],extent=(0,15,0,15), axes = ax,vmin=vmin,vmax=vmax,interpolation='nearest')
-    ax.set_ylabel(r'$R_{form}$ [kpc]')
-    ax.set_xlabel(r'$R_{final}$ [kpc]')
-    ax.set_title('isolated')
-    ax.plot([0,15],[0,15],'y--',linewidth=2)
-    ax.set_xlim(0,15)
-    ax.set_ylim(0,15)
-
-    ax = plt.subplot(132)
-    g2, x2, y2 = pynbody.plot.generic.prob_plot(s2.s['rxy'],s2.s['rform'],s2.s['mass'],extent=(0,15,0,15), axes = ax, vmin=vmin,vmax=vmax,interpolation='nearest')
-    ax.set_xlabel(r'$R_{final}$ [kpc]')
-    ax.set_title('merger')
-    ax.set_yticklabels("")
-    ax.plot([0,15],[0,15],'y--',linewidth=2)
-    ax.set_xlim(0,15)
-    ax.set_ylim(0,15)
-
-
-    ax = plt.subplot(133)
+    for j,s in enumerate(slist) : 
+        color = plt.cm.rainbow(int(j*256.0/len(slist)))
+#        nonsat = np.where(s.s['mass']>0.05)[0]
+        ps   = pynbody.analysis.profile.Profile(s.s,min=.01,max=15,nbins=30)
+        psv1 = pynbody.analysis.profile.VerticalProfile(s.s, rs[0]-.5,rs[0]+.5,3,nbins=20)
+        psv2 = pynbody.analysis.profile.VerticalProfile(s.s, rs[1]-.5,rs[1]+.5,3,nbins=20)
+        if j < 4 : col = 0
+        else : col = 1
+        axs[0,col].plot(ps['rbins'],ps['density'].in_units('Msol kpc^-2'),color=color,label=titles_all[j])
+        axs[1,col].plot(psv1['rbins'],psv1['density'].in_units('Msol kpc^-3'),color=color)
+        axs[1,col].plot(psv2['rbins'],psv2['density'].in_units('Msol kpc^-3'),color=color,linestyle='--')
     
-    im = ax.imshow(np.log10(g1/g2), extent=[0,15,0,15], origin='lower',interpolation='nearest')
-    cb = plt.colorbar(im).set_label('$log_{10}(P_i/P_m)$')
-    ax.set_title(r'$P_{isolated}/P_{merger}$')
-    ax.set_xlabel(r'$R_{final}$ [kpc]')
-    ax.set_yticklabels("")
-    ax.plot([0,15],[0,15],'y--',linewidth=2)
-    ax.set_xlim(0,15)
-    ax.set_ylim(0,15)
+    
+    for ax in axs.flatten(): ax.semilogy()
+    
+    axs[0,0].set_ylabel(r'$\Sigma_{\star}$ [M$_{\odot}$ kpc$^{-2}$]')
+    axs[1,0].set_ylabel(r'$\rho_{\star}$ [M$_{\odot}$ kpc$^{-3}$]')
+    axs[0,1].set_yticklabels('')
+    axs[1,1].set_yticklabels('')
+    axs[0,0].legend(frameon=False,prop=dict(size=16))
+    axs[0,1].legend(frameon=False,prop=dict(size=16))
+    axs[1,0].legend(frameon=False,prop=dict(size=16))
 
+    plt.subplots_adjust(wspace=.02)
+
+
+def make_age_veldispersion_figure(si,slist) : 
+    f,axs = plt.subplots(2,2,figsize=(10,10))
+    p = pynbody.analysis.profile.Profile(si.s, min=.01,max=15,nbins=30)
+                                            
+    for i in range(2) : 
+        axs[0,i].plot(p['rbins'],p['vr_disp'].in_units('km s^-1'),'k-',label='isolated')
+        axs[0,i].plot(p['rbins'],p['vz_disp'].in_units('km s^-1'),'k--')
+        axs[1,i].plot(p['rbins'],p['age'].in_units('Gyr'),'k-')
+        axs[0,i].set_xlabel('$R$ [kpc]')
+        axs[1,i].set_xlabel('$R$ [kpc]')
+
+    for j,s in enumerate(slist) : 
+        color = plt.cm.rainbow(int(j*256.0/len(slist)))
+        nonsat = np.where(s.s['mass']>0.05)[0]
+        ps   = pynbody.analysis.profile.Profile(s.s[nonsat],min=.01,max=15,nbins=30)
+        if j < 4 : col = 0
+        else : col = 1
+        axs[0,col].plot(ps['rbins'],ps['vr_disp'].in_units('km s^-1'),color=color,label=titles_all[j])
+        axs[0,col].plot(ps['rbins'],ps['vz_disp'].in_units('km s^-1'),color=color,linestyle='--')
+        axs[1,col].plot(ps['rbins'],ps['age'].in_units('Gyr'),color=color)
+    
+
+    for i in range(2) : 
+        axs[0,i].set_ylim(0,200)
+        axs[1,i].set_ylim(0,10)
+    for ax in axs.flatten() : ax.set_xlim(0,14.9)
+
+    axs[0,0].set_ylabel(r'$\sigma_R, \sigma_z$ [km/s]')
+    axs[1,0].set_ylabel(r'Age [Gyr]')
+    axs[0,1].set_yticklabels('')
+    axs[1,1].set_yticklabels('')
+    axs[0,0].legend(frameon=False,prop=dict(size=16))
+    axs[0,1].legend(frameon=False,prop=dict(size=16))
+
+    plt.subplots_adjust(wspace=.02)
+
+
+def make_rform_histograms(si,slist,titles) : 
+    f,axs = plt.subplots(2,3,figsize=(20,10))
+    rs = [4,8,12]
+
+    if 'rxyform' not in si.s.keys() : 
+        import isolated as iso
+        iso.get_rform(si.s)
+        si.s['rxyform'] = si.s['rform']
+
+    for i in range(2) : 
+        for j,r in enumerate(rs) : 
+            filt = pynbody.filt.BandPass('rxy', r-.5,r+.5)
+            axs[i,j].hist(si.s[filt]['rxyform'], range=[0,15],bins=50, normed=True,
+                        histtype='step',color='k',label='isolated')
+            
+            if i == 1 : 
+                axs[i,j].set_xlabel('$R_{form}$ [kpc]')
+            else : 
+                axs[i,j].set_xticklabels('')
+                axs[i,j].set_title('$R_{final} = $ %d [kpc]'%rs[j])
+
+            if j > 0 : 
+                axs[i,j].set_yticklabels('')
+            else : 
+                axs[i,j].set_ylabel('$N$')
+
+            axs[i,j].set_ylim(0,.35)
+            axs[i,j].set_xlim(0,15)
+            
+    insitu = pynbody.filt.HighPass('mass', .05)
+
+    for i,s in enumerate(slist) : 
+        if i < 4 : ind=0
+        else : ax = ind=1
+           
+        for j,r in enumerate(rs) : 
+            ax = axs[ind,j]
+            filt = pynbody.filt.BandPass('rxy', r-.5,r+.5)
+            ax.hist(s.s[filt&insitu]['rxyform'], range=[0,15],bins=50, normed=True, 
+                     color = get_color(i,len(slist)), histtype='step',label=titles[i])
+
+            
+    axs[0,0].legend(frameon=False,prop=dict(size=16))
+    axs[1,0].legend(frameon=False,prop=dict(size=16))
+    
+    plt.subplots_adjust(wspace=.05,hspace=.05)
 
 def merger_profile_evolution(list1,list2) : 
 
@@ -470,34 +611,60 @@ def merger_profile_evolution(list1,list2) :
 
 
 
-def plot_structural_parameters(flist1,flist2) : 
-    
-    fits1 = iso.disk_structure_evolution(flist1)
-    fits2 = iso.disk_structure_evolution(flist2,merger=True)
-    
-    fig = plt.figure(figsize=(6,10))
-    
 
-    # radial scale length
-    ax = fig.add_subplot(211)
-    
-    ax.plot(fits1[0],fits1[1][:,1],label='isolated')
-    ax.plot(fits2[0],fits2[1][:,1],label='merger')
-    ax.set_xticklabels("")
-    plt.legend(loc='upper left', prop=FontProperties(size='small'))
-    ax.set_ylabel(r'$h_R$ [kpc]')
-    
-    
-    # vertical scale height
 
-    ax = fig.add_subplot(212)
+def get_color(i,n,cmap = plt.cm.rainbow):
+    return cmap(int(i*256./n))
 
-    ax.plot(fits1[0],fits1[3][:,1], 'b-', fits1[0],fits1[3][:,3], 'b--')
-    ax.plot(fits2[0],fits2[3][:,1], 'g-', fits2[0],fits2[3][:,3], 'g--')
 
-    ax.set_ylabel(r'$h_z$ [kpc]')
-    ax.set_xlabel(r'$t$ [Gyr]')
 
-    fig.subplots_adjust(hspace=.1)
+def make_hz_figure(si,slist,titles) : 
+    import diskfitting
     
-    return fits1, fits2
+    f, axs = plt.subplots(2,1,figsize=(10,14))
+
+    dat = np.load(si.filename+'.scaleheights.npz')
+    
+    markersize = 15
+    alpha=.7
+    for ax in axs: 
+        ax.plot(dat['rs'],dat['h1'],'.',color='k',label='isolated',markersize=markersize,alpha=1)
+        ax.plot(dat['rs'],dat['h2'],'+',color='k',markersize=markersize,alpha=1)
+
+
+    for i,s in enumerate(slist) : 
+        dat = np.load(s.filename+'.scaleheights.npz')
+        color = get_color(i,len(slist))
+        if i < 4 : ax = axs.flatten()[0]
+        else : ax = axs.flatten()[1]
+        ax.plot(dat['rs'],dat['h1'],'.',color=color,label=titles[i],markersize=markersize,alpha=alpha)
+        ax.plot(dat['rs'],dat['h2'],'+',color=color,markersize=markersize,alpha=alpha)
+
+    for ax in axs :
+        ax.set_xlim(3,15)
+        ax.set_ylim(0,.95)
+        ax.legend(loc='upper left',frameon=False,prop=dict(size=16),scatterpoints=1)
+        ax.set_ylabel('$h_z$ [kpc]')
+
+    axs.flatten()[1].set_xlabel('$R$ [kpc]')
+    axs.flatten()[0].set_xticklabels('')
+    plt.subplots_adjust(hspace=.05)
+
+
+def make_vert_sat_profiles(si,slist,titles) : 
+    f,ax = plt.subplots(figsize=(10,8))
+
+
+    sat = pynbody.filt.LowPass('mass',0.05)
+    p = pynbody.analysis.profile.VerticalProfile(si.s,7,9,4,nbins=20)
+    
+    ax.plot(p['rbins'],p['density'].in_units('Msol kpc^-3'),'k--',label='isolated')
+
+    for i,s in enumerate(slist) : 
+        p = pynbody.analysis.profile.VerticalProfile(s.s[sat],7,9,4,nbins=20)
+        ax.plot(p['rbins'],p['density'].in_units('Msol kpc^-3'),color = get_color(i,len(slist)),label=titles[i])
+
+    ax.semilogy()
+    ax.set_xlabel('$z$ [kpc]')
+    ax.set_ylabel(r'$\rho$ [M$_{\odot}$ kpc$^{-3}$]')
+    ax.legend(frameon=False,prop=dict(size=16))
