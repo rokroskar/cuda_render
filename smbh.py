@@ -67,7 +67,7 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     if dir[-1] != '/' : dir += '/'
 
-    flist = glob.glob(dir+'6/*.0???0')
+    flist = glob.glob(dir+'*/*.0????')
     flist.sort(key=lambda x: x[-5:])
     print flist[0:10]
 
@@ -81,7 +81,7 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
     dpos = np.diff(pos,axis=1).squeeze()
 
     r = pyn.array.SimArray(np.sqrt(np.sum(dpos**2,axis=1)),'kpc')
-    t = pyn.array.SimArray(t, 's kpc km^-1').in_units('Myr')
+    t = pyn.array.SimArray(t, 'Gyr').in_units('Myr')
 
 
     plt.plot(t - t[0], r)
@@ -94,7 +94,7 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     return t, r, pos
 
-def filelist(path='./', pattern = '?/*.00???') : 
+def filelist(path='./', pattern = '*/*.0????') : 
     import glob
     import sys
     

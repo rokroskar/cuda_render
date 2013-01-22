@@ -134,7 +134,7 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
         vel[i] = res[i][1]
         mass[i] = res[i][2]
         phi[i] = res[i][3]
-        time[i] = res[i][4]
+        time[i] = res[i][4].ratio('Gyr')
         
 
     return pos, vel, mass, phi, time        
