@@ -64,10 +64,10 @@ def make_r_z_figure(path):
     
 def load_snapshots(flist = None):
     if flist is None : 
-        flist = ['6/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00633', 
-                 '6/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00660',
-                 '7/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00771',
-                 '9/gas_merger0.1_thr10_Rx8_nometalcool_1pc.00921']
+        flist = ['6/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.00614', 
+                 '6/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.00660',
+                 '6/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.00691',
+                 '22/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.02275']
     slist = []
 
     for f in flist : 
@@ -77,41 +77,63 @@ def load_snapshots(flist = None):
 
 
 
-def make_morph_evol_figure(slist) : 
-    fig = plt.figure(figsize=(6.5,12))
+def make_morph_evol_figure(slist,width=1.0,overplot_bh = True) : 
+    fig = plt.figure(figsize=(12,12))
     cmap = plt.cm.Blues_r
 
     for i,s in enumerate(slist) : 
 
-        ax = fig.add_subplot(4,2,i*2+1)
-        pynbody.plot.image(s.g,width=1,units='Msol kpc^-2',
+        ax = fig.add_subplot(4,4,i*4+1)
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2',
                            cmap=cmap,subplot=ax,show_cbar=False)
         smbh.overplot_bh(s)
-        plt.xlim(-.5,.5)
-        plt.ylim(-.5,.5)
+        plt.xlim(-width/2.0,width/2.0)
+        plt.ylim(-width/2.0,width/2.0)
         if i == 0:
             plt.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
                          arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
-            plt.annotate("1 kpc", xy=(0.45,0.065), color ="white",fontsize='smaller', 
+            plt.annotate("%.0f kpc"%width, xy=(0.45,0.065), color ="white",fontsize='smaller', 
                          xycoords = 'axes fraction')
 
-        plt.annotate('$t = %0.0f$ Myr'%s.properties['time'].in_units('Myr'), 
+        plt.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')-slist[0].properties['time'].in_units('Myr')), 
                      (0.1,0.85), color='white', fontweight='bold', 
                      xycoords = 'axes fraction')
         utils.clear_labels(ax)
         s.rotate_x(-90)
-        ax = fig.add_subplot(4,2,i*2+2)
-        pynbody.plot.image(s.g,width=1,units='Msol kpc^-2',
+
+
+        ax = fig.add_subplot(4,4,i*4+2)
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2',
+                           cmap=cmap,subplot=ax,show_cbar=False)
+        s.rotate_x(90)
+        smbh.overplot_bh(s)
+        plt.xlim(-width/2.0,width/2.0)
+        plt.ylim(-width/2.0,width/2.0)
+        utils.clear_labels(ax)
+
+        ax = fig.add_subplot(4,4,i*4+3)
+        pynbody.plot.image(s.g,width=width*10.0,units='Msol kpc^-2',
+                           cmap=cmap,subplot=ax,show_cbar=False)
+        s.rotate_x(-90)
+        utils.clear_labels(ax)
+        plt.xlim(-width*10/2.0,width*10/2.0)
+        plt.ylim(-width*10/2.0,width*10/2.0)
+        if i == 0:
+            plt.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
+                         arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
+            plt.annotate("%.0f kpc"%(float(width*10)), xy=(0.45,0.065), color ="white",fontsize='smaller', 
+                         xycoords = 'axes fraction')
+
+        ax = fig.add_subplot(4,4,i*4+4)
+        pynbody.plot.image(s.g,width=width*10.0,units='Msol kpc^-2',
                            cmap=cmap,subplot=ax,show_cbar=False)
         s.rotate_x(90)
         utils.clear_labels(ax)
-        smbh.overplot_bh(s)
-        plt.xlim(-.5,.5)
-        plt.ylim(-.5,.5)
-        
+        plt.xlim(-width*10/2.0,width*10/2.0)
+        plt.ylim(-width*10/2.0,width*10/2.0)
     
     plt.subplots_adjust(hspace=0.1)
-
+    
 
 def central_profile_figure(slist):
 
@@ -237,6 +259,11 @@ def pdf_vs_time(dir, times = [5003.1,5004,5005]) :
 #        ax.hist(np.log10(s.g['rho'].in_units('m_p cm^-3')),histtype='step',normed=True)
         ax.plot(rho, k(rho), label = 't=%.2f Myr'%t)
     ax.set_xlabel(r'$\rho$ [amu/cc]')
-    ax.legend(loc='upper left')
+    ax.legend(loc='upper right')
                 
         
+
+def savefig(fname): 
+
+    plt.savefig('smbh_p1_figs/%s.pdf'%fname,format='pdf',bbox_inches='tight')
+    plt.savefig('smbh_p1_figs/%s.eps'%fname,format='eps',bbox_inches='tight')
