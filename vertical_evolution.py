@@ -63,6 +63,72 @@ def vdisp_deltar(s) :
 
     return vdisp_r, vdisp_z, hist, xs, ys
 
+def zrms_vdisp_deltar_rform(s,gridsize=(20,20)):
+        
+    pynbody.analysis.angmom.faceon(s)
+
+
+    if 'rform' not in s.s.keys():
+        iso.get_rform(s.s)
+
+
+    if 'dr' not in s.s.keys():
+        s.s['dr'] = s.s['rxy']-s.s['rform']
+
+    fig, axs = plt.subplots(2,2,figsize=(13,15))
+
+    for i,rlims in enumerate([[2,4],[4,6]]) : 
+        
+        rfilt = pynbody.filt.BandPass('rform',rlims[0],rlims[1])
+        drfilt = pynbody.filt.LowPass('dr', 10)
+        hist, zrms, zrms_i, xs, ys = iso.get_zrms_grid(s.s[rfilt&drfilt], 'dr', 'age', 
+                                                       rmin = 0, rmax = 20, zmin = 0, zmax= 3,
+                                                       gridsize=gridsize)
+
+        hist2, vdisp_r, vdisp_z, vdisp_z_i, xs2, ys2 = iso.get_vdisp_grid(s.s[rfilt&drfilt],
+                                                                          'dr','age',gridsize=gridsize)
+                
+        ax = axs[0,i]
+
+        #ax.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red',linewidth=1.5)
+
+        im = ax.imshow(zrms-zrms_i,origin='lower',extent=(min(xs),max(xs),min(ys),max(ys)),
+                        aspect='auto',vmin=-.2,vmax=1.,interpolation='nearest')
+                      
+        ax.set_xlabel(r'$\Delta R$ [kpc]',fontweight='bold', fontsize='small')
+        ax.set_ylabel('Age [Gyr]', fontweight='bold', fontsize='small')
+        
+        ax.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small', fontweight='bold')
+
+        ax = axs[1,i]
+
+        #ax.contour(xs,ys,np.log10(hist2),np.linspace(1,4,10),colors='red',linewidth=1.5)
+
+        im2 = ax.imshow(vdisp_z,origin='lower',extent=(min(xs2),max(xs2),min(ys2),max(ys2)),
+                        aspect='auto',vmin=0,vmax=70,interpolation='nearest')
+                      
+        ax.set_xlabel(r'$\Delta R$ [kpc]',fontweight='bold', fontsize='small')
+        ax.set_ylabel('Age [Gyr]', fontweight='bold', fontsize='small')
+        
+        ax.set_title('$%d < R_{form} \\mathrm{ [kpc]} < %d$'%(rlims[0],rlims[1]), fontsize='small', fontweight='bold')
+
+    bb1 = axs[0,1].get_position()
+    bb2 = axs[1,1].get_position()
+    cbax = fig.add_axes([bb1.x1+.01,bb1.y0,0.02,bb1.y1-bb1.y0])
+    cb1 = fig.colorbar(im,cax=cbax)
+    cb1.set_label('$\Delta z_{rms} \mathrm{~[kpc]}$',fontsize='smaller', fontweight='bold')
+
+    cbax2 = fig.add_axes([bb2.x1+.01,bb2.y0,0.02,bb2.y1-bb2.y0])
+    cb2 = fig.colorbar(im2,cax=cbax2)
+    cb2.set_label('$\sigma_z$ [km/s]',fontsize='smaller', fontweight='bold')
+
+    for tick in cb1.ax.get_yticklabels():
+        tick.set_fontsize('smaller')
+
+    for tick in cb2.ax.get_yticklabels():
+        tick.set_fontsize('smaller')
+        
+
 def zrms_deltar_rform(s,gridsize=(20,20)):
     
     fig = plt.figure(figsize=(13,15))
