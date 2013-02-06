@@ -76,6 +76,47 @@ def load_snapshots(flist = None):
     return slist
 
 
+def load_snapshot_sequence(dir='./', ntiles = 20):
+    out1 = pynbody.load(smbh.nearest_output(0))
+    out2 = pynbody.load(smbh.nearest_output(1e6))
+
+    t1 = out1.properties['time'].in_units('Myr')
+    t2 = out2.properties['time'].in_units('Myr')
+
+    times = np.linspace(t1,t2,ntiles)
+
+    return [pynbody.load(x) for x in map(smbh.nearest_output, times)]
+    
+
+def make_filmstrip_figure(slist): 
+
+    f, axs = plt.subplots(5,4,figsize=(8,10))
+
+    cmap = plt.cm.Blues_r
+    
+    for i,s in enumerate(slist) : 
+        ax = axs.flatten()[i*2]
+        
+        if np.diff(s[smbh.bh_index(s)]['r'])[0] > 0.2 : 
+            pynbody.analysis.halo.center(s,mode='ind',ind=smbh.bh_index(s))
+            width = .5
+        else:
+            pynbody.analysis.halo.center(s.g,mode='hyb')
+            width = .25
+
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, threaded=20)
+        ax.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')-slist[0].properties['time'].in_units('Myr')), 
+                     (0.1,0.85), color='white', fontweight='bold', 
+                     xycoords = 'axes fraction', fontsize=12)
+        
+        ax = axs.flatten()[i*2+1]
+        s.rotate_x(90)
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap)
+        s.rotate_x(-90)
+
+    map(utils.clear_labels,axs.flatten())
+    plt.subplots_adjust(hspace=.1,wspace=.1)
+        
 
 def make_morph_evol_figure(slist,width=1.0,overplot_bh = True) : 
     fig = plt.figure(figsize=(12,12))
