@@ -2,7 +2,7 @@ import ebf
 import pynbody
 import os
 import numpy as np
-
+import matplotlib.pylab as plt
 
 def make_galaxia_input(sim, run_enbid=False) :
 
@@ -24,6 +24,7 @@ def make_galaxia_input(sim, run_enbid=False) :
     bad = np.where(s.s['feh'] < -5)[0]
     s.s[bad]['mets'] = -5.0
 
+    s.s['mets']+=.1
     # make the enbid file
     
     ebf.write(filename+'_galaxia.ebf', '/pos', pos, 'w')
@@ -53,3 +54,44 @@ def make_galaxia_input(sim, run_enbid=False) :
 
 
     
+
+def compare_run_to_model(sim_gal, mod_gal) : 
+
+    sim = ebf.read(sim_gal)
+    mod = ebf.read(mod_gal)
+
+    # two columns -- simulation on left, galaxia model on right
+
+    hists = ['ubv_v','age','feh','rad']
+    ranges = [[-6,10],[6,10.5],[-2,.5],[0,2]]
+    labels = ['sim','model']
+
+    f, axs = plt.subplots(len(hists),1,figsize=(7,len(hists)*2.5))
+        
+    # histograms
+
+    for i,h in enumerate(hists) : 
+        for j,x in enumerate([sim,mod]) :
+            ax = axs[i]
+            ax.hist(x[h],bins=100,normed=True,histtype='step',range=ranges[i],label=labels[j])
+            ax.set_xlabel(r'%s'%h)
+    
+
+    axs[1].set_ylim(0,1.5)
+    plt.subplots_adjust(hspace=.5)
+    axs[0].legend(prop=dict(size=10))
+
+
+    # CMDs
+
+    f, axs = plt.subplots(1,2)
+
+    axs = axs.flatten()
+
+    for i,s in enumerate([sim,mod]) : 
+        axs[i].plot(s['ubv_b']-s['ubv_v'],s['ubv_v'],',',label=labels[i])
+        axs[i].set_ylim(10,-5)
+        axs[i].set_xlim(-.5,2)
+        axs[i].set_ylabel('$V$')
+        axs[i].set_xlabel('$B - V$')
+        
