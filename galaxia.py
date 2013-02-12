@@ -13,10 +13,7 @@ def make_galaxia_input(sim, run_enbid=False) :
 
     filename = s.filename
 
-    # make the pos array
-
-    pos = np.array([s.s['x'],s.s['y'],s.s['z'],s.s['vx'],s.s['vy'],s.s['vz']]).T
-    
+      
     # set low metalicities to some reasonable value
 
     s.s['mets'] = s.s['feh']
@@ -25,6 +22,11 @@ def make_galaxia_input(sim, run_enbid=False) :
     s.s[bad]['mets'] = -5.0
 
     s.s['mets']+=.1
+  
+    # make the pos array
+
+    pos = np.array([s.s['x'],s.s['y'],s.s['z'],s.s['vx'],s.s['vy'],s.s['vz'],s.s['age'],s.s['mets']]).T
+
     # make the enbid file
     
     ebf.write(filename+'_galaxia.ebf', '/pos', pos, 'w')
@@ -48,7 +50,8 @@ def make_galaxia_input(sim, run_enbid=False) :
         # run enbid
 
         os.system('~/bin/enbid -dmc --dim=3 --ngb=64 --dsuffix=_d3n64 %s_galaxia.ebf'%filename)
-        os.system('~/bin/enbid -dmc --dim=6 --ngb=64 --dsuffix=_d6n64 %s_galaxia.ebf'%filename)
+#        os.system('~/bin/enbid -dmc --dim=6 --ngb=64 --dsuffix=_d6n64 %s_galaxia.ebf'%filename)
+#        os.system('~/bin/enbid -dm --gmetric=1 --dim=8 --ngb=64 --dsuffix=_d8n64 %s_galaxia.ebf'%filename)
 
 
 
@@ -56,6 +59,7 @@ def make_galaxia_input(sim, run_enbid=False) :
     
 
 def compare_run_to_model(sim_gal, mod_gal) : 
+    from scipy.stats import gaussian_kde as kde
 
     sim = ebf.read(sim_gal)
     mod = ebf.read(mod_gal)
@@ -73,18 +77,21 @@ def compare_run_to_model(sim_gal, mod_gal) :
     for i,h in enumerate(hists) : 
         for j,x in enumerate([sim,mod]) :
             ax = axs[i]
-            ax.hist(x[h],bins=100,normed=True,histtype='step',range=ranges[i],label=labels[j])
+            ax.hist(x[h],bins=50,normed=True,histtype='step',range=ranges[i],label=labels[j])
+#            k = kde(x[h])
+#            xs = np.linspace(ranges[i][0],ranges[i][1],200)
+#            ax.plot(xs,k(xs),label=labels[j])
             ax.set_xlabel(r'%s'%h)
     
 
-    axs[1].set_ylim(0,1.5)
+    axs[1].set_ylim(0,2.0)
     plt.subplots_adjust(hspace=.5)
     axs[0].legend(prop=dict(size=10))
 
 
     # CMDs
 
-    f, axs = plt.subplots(1,2)
+    f, axs = plt.subplots(1,2,figsize=(13,6))
 
     axs = axs.flatten()
 
@@ -94,4 +101,5 @@ def compare_run_to_model(sim_gal, mod_gal) :
         axs[i].set_xlim(-.5,2)
         axs[i].set_ylabel('$V$')
         axs[i].set_xlabel('$B - V$')
-        
+        axs[i].set_title(labels[i])
+    
