@@ -49,8 +49,8 @@ def make_r_z_figure(path):
 
     plt.xlabel('$t$ [Myr]')
     plt.ylabel('$R_{sep}$ [pc]')
-    
     plt.semilogy()
+    plt.xlim(orbit['t'].min(), orbit['t'].max())
 
     ax = fig.add_subplot(2,1,2)
     
@@ -59,7 +59,7 @@ def make_r_z_figure(path):
 
     plt.xlabel('$t$ [Myr]')
     plt.ylabel('$z$ [pc]')
-
+    plt.xlim(orbit['t'].min(), orbit['t'].max())
     
     
 def load_snapshots(flist = None):
@@ -99,7 +99,7 @@ def make_filmstrip_figure(slist):
         
         if np.diff(s[smbh.bh_index(s)]['r'])[0] > 0.2 : 
             pynbody.analysis.halo.center(s,mode='ind',ind=smbh.bh_index(s))
-            width = .5
+            width = .7
         else:
             pynbody.analysis.halo.center(s.g,mode='hyb')
             width = .25
@@ -108,10 +108,16 @@ def make_filmstrip_figure(slist):
         ax.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')-slist[0].properties['time'].in_units('Myr')), 
                      (0.1,0.85), color='white', fontweight='bold', 
                      xycoords = 'axes fraction', fontsize=12)
-        
+        smbh.overplot_bh(s,ax)
+        ax.set_xlim(-width/2.0,width/2.0)
+        ax.set_ylim(-width/2.0,width/2.0)
+
         ax = axs.flatten()[i*2+1]
         s.rotate_x(90)
         pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap)
+        smbh.overplot_bh(s,ax)
+        ax.set_xlim(-width/2.0,width/2.0)
+        ax.set_ylim(-width/2.0,width/2.0)
         s.rotate_x(-90)
 
     map(utils.clear_labels,axs.flatten())
@@ -174,6 +180,41 @@ def make_morph_evol_figure(slist,width=1.0,overplot_bh = True) :
         plt.ylim(-width*10/2.0,width*10/2.0)
     
     plt.subplots_adjust(hspace=0.1)
+
+def make_zoomin_figure(slist) : 
+    f, axs = plt.subplots(5,4,figsize=(8,10))
+    cmap = plt.cm.Blues_r
+    
+    widths = 10.0/np.logspace(0,2,len(slist))
+
+    for i,s in enumerate(slist) : 
+        ax = axs[i]
+        
+        if np.diff(s[smbh.bh_index(s)]['r'])[0] > 0.2 : 
+            pynbody.analysis.halo.center(s,mode='ind',ind=smbh.bh_index(s))
+        else:
+            pynbody.analysis.halo.center(s.g,mode='hyb')
+                    
+        for j in range(4) : 
+            
+            pynbody.plot.image(s.g,width=widths[j],units='Msol kpc^-2', subplot=ax[j], show_cbar=False, cmap=cmap, threaded=20)
+        
+        ax[0].annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')-slist[0].properties['time'].in_units('Myr')), 
+                       (0.1,0.85), color='white', fontweight='bold', 
+                       xycoords = 'axes fraction', fontsize=12)
+        
+        
+    map(utils.clear_labels,axs.flatten())
+
+    for i,ax in enumerate(axs[-1]) : 
+        ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
+                 arrowprops=dict(arrowstyle='<->',color='white',linewidth=1.5))
+        ax.annotate("%.2f kpc"%widths[i], xy=(0.3,0.065), color ="white",
+                    fontsize=12, xycoords = 'axes fraction')
+
+    plt.subplots_adjust(hspace=.1,wspace=.1)
+        
+    
     
 
 def central_profile_figure(slist):
@@ -302,9 +343,41 @@ def pdf_vs_time(dir, times = [5003.1,5004,5005]) :
     ax.set_xlabel(r'$\rho$ [amu/cc]')
     ax.legend(loc='upper right')
                 
+
+def make_spaans_plot(tablefile = None): 
+    plt.figure()
+
+    if tablefile is None : 
+        import glob 
+        tablefile = glob.glob('*.Spaanscool')
+        if len(tablefile) > 1: raise RuntimeException('Should only have a single cooling table')
+
+    table = np.genfromtxt(tablefile[0])
+    # the table specifies temperature as a function of density for
+    # different accretion rates and metallicities. The columns are
+    # paired by accretion rate -- columns 1-2 = 100 Msol/yr, 3-4 = 60
+    # Msol/yr, 5-6 = 30 Msol/yr. The first column in each pair is at
+    # solar metallicity, the second at 3x solar. 
+
+    labels = ['$100 \mathrm{~M}_{\odot} / $yr, $\mathrm{Z}_{\odot}$',
+              '$100 \mathrm{~M}_{\odot} / $yr, $3\mathrm{Z}_{\odot}$',
+              '$60 \mathrm{~M}_{\odot} / $yr, $\mathrm{Z}_{\odot}$',
+              '$60 \mathrm{~M}_{\odot} / $yr, $3\mathrm{Z}_{\odot}$',
+              '$30 \mathrm{~M}_{\odot} / $yr, $\mathrm{Z}_{\odot}$',
+              '$30 \mathrm{~M}_{\odot} / $yr, $3\mathrm{Z}_{\odot}$']
+
+
+    for i in np.arange(6)+1 : 
+        plt.plot(table[:,0], table[:,i], label = labels[i-1])
         
+    plt.xlabel(r'$\rho$ [amu/cc]')
+    plt.ylabel('T [K]')
+    plt.loglog()
+    plt.ylim(10,2e3)
+    plt.legend(loc='upper right',prop=dict(size=12))
 
 def savefig(fname): 
 
     plt.savefig('smbh_p1_figs/%s.pdf'%fname,format='pdf',bbox_inches='tight')
     plt.savefig('smbh_p1_figs/%s.eps'%fname,format='eps',bbox_inches='tight')
+

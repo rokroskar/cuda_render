@@ -65,6 +65,10 @@ kappa_dust=1 cm^2/g (E_CR/1e-3)
 and the IMF becomes more top-heavy
 with increasing E_CR.
 
+rad_imf3: ? 
+
+rad_imf4: ?
+
 """
 
 
@@ -94,7 +98,9 @@ for l in rad_fixed_kappa :
 
 
 rad_var_kappa = ['rad_cr',
-                 'rad_cr_low']
+                 'rad_cr_low',
+                 'rad_imf3',
+                 'rad_imf4']
 
 names_var_kappa = []
 for l in rad_var_kappa : 

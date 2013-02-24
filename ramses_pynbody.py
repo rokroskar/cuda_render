@@ -148,7 +148,14 @@ def tform(self) :
     top.s['tform'] = -1.0
     done = 0
     for i in range(ncpu) : 
-        f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+        try : 
+            f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+        except IOError : 
+            import os
+            
+            os.system("cd %s; mkdir birth; /home/itp/roskar/ramses/galaxy_formation/part2birth -inp output_%s; cd .."%(top.filename[:-12],top._timestep_id))
+            f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+
         n = fread(f,1,'i')
         n /= 8
         ages = fread(f,n,'d')

@@ -21,8 +21,8 @@ def bh_index(sim) :
     return np.array(np.where(sim['mass'] == sim['mass'].max())).flatten()
 
 
-def overplot_bh(sim):
-    plt.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'ro')
+def overplot_bh(sim,ax):
+    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'ro')
     
 
 def plot_jeansratio(sim):

@@ -677,26 +677,41 @@ def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.
     
 
 
-def plot_zrms_vs_r(s,rs=[2,4,6,8,10,12,14]) : 
+def plot_zrms_vs_r(s,rs=[2,4,6,8,10,12,14], ages = None) : 
     pynbody.analysis.angmom.faceon(s)
 
     f, ax = plt.subplots()
 
-    zrms = np.zeros(len(rs))
+    if ages is None : 
+        ages = np.array([[s.s['age'].min(), s.s['age'].max()]])
+    else : 
+        ages = np.array(ages)
+
+    print ages
+
+
+    zrms = np.zeros((len(rs),len(ages)))
 
     for i,r in enumerate(rs) : 
 
 #        p = pynbody.analysis.profile.VerticalProfile(s.s, r-.5,r+.5,3.0,nbins=30)
-        
-        ind = np.where((s.s['rxy'] < r+.5) & (s.s['rxy'] > r-.5))[0]
-        zrms[i] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
+        if ages is not None : 
+            for j, age in enumerate(ages) : 
+                ind = np.where((s.s['rxy'] < r+.5) & (s.s['rxy'] > r-.5) & 
+                               (s.s['age'] > age.min()) & (s.s['age'] < age.max()))[0]
+                zrms[i,j] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
+                print len(ind), age.min(), age.max()
 
-    ax.plot(rs, zrms, 'o')
+    for i in range(len(ages)) :
+        ax.plot(rs, zrms[:,i], 'o', label = '%.1f $<$ age $<$ %.1f'%(ages[i].min(),ages[i].max()))
+
     ax.set_xlabel('R [kpc]')
     ax.set_ylabel('$z_{rms}$')
     ax.set_ylim(0,1)
     ax.set_xlim(0,15)
-        
+    ax.legend(loc='upper left',frameon=False)
+    return zrms
+
 def compare_zrms_vs_r(slist, names, rs = [2,4,6,8,10,12,14], agefilt = pynbody.filt.BandPass('age',0,10), ax = None):
     if ax is None: 
         fig, ax = plt.subplots()
@@ -721,3 +736,5 @@ def compare_zrms_vs_r(slist, names, rs = [2,4,6,8,10,12,14], agefilt = pynbody.f
     ax.legend(loc='upper left')
 
         
+
+    
