@@ -76,7 +76,7 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     assert(len(inds) == 2)
 
-    pos, vel, mass, phi, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark', test=test)
+    pos, vel, mass, phi, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark', mode = 'hyb', test=test)
 
     dpos = np.diff(pos,axis=1).squeeze()
 

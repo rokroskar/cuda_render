@@ -42,13 +42,15 @@ def make_r_z_figure(path):
     orbit = np.load(path+'/bh_orbit.npz')
 
     fig = plt.figure(figsize=(10,15))
+    
+    rs = np.sqrt((orbit['pos'][:,:,0:2]**2).sum(axis=2))
 
     ax = fig.add_subplot(2,1,1)
 
-    plt.plot(orbit['t'], orbit['r']*1000.)
+    plt.plot(orbit['t'], rs*1000.)
 
     plt.xlabel('$t$ [Myr]')
-    plt.ylabel('$R_{sep}$ [pc]')
+    plt.ylabel('$R$ [pc]')
     plt.semilogy()
     plt.xlim(orbit['t'].min(), orbit['t'].max())
 
@@ -375,6 +377,23 @@ def make_spaans_plot(tablefile = None):
     plt.loglog()
     plt.ylim(10,2e3)
     plt.legend(loc='upper right',prop=dict(size=12))
+
+def phaseplot_spaans(s, tablefile=None) : 
+    if tablefile is None : 
+        import glob 
+        tablefile = glob.glob('*.Spaanscool')
+        if len(tablefile) > 1: raise RuntimeException('Should only have a single cooling table')
+
+    table = np.log10(np.genfromtxt(tablefile[0]))
+
+    pynbody.plot.rho_T(s.g)
+#    res = pynbody.plot.generic.gauss_kde(np.log10(s.g['rho']),np.log10(s.g['temp']),mass=s.g['mass'],make_plot=False)
+ #   plt.imshow(np.log10(res[0]),extent=(res[1].min(),res[1].max(),res[2].min(),res[2].max()),origin='lower',vmin=4,vmax=7)
+    plt.plot(table[:,0],table[:,1],table[:,0],table[:,2],linewidth=2)
+
+def make_jeansmass_figure(s) :
+    
+    
 
 def savefig(fname): 
 
