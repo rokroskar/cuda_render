@@ -393,6 +393,43 @@ def phaseplot_spaans(s, tablefile=None) :
 
 def make_jeansmass_figure(s) :
     
+    pass
+
+def make_sfr_figure() : 
+    f,axs = plt.subplots(3,1)
+
+    s = pynbody.load('../gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc/45/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.04500')
+    sl_s = pynbody.tipsy.StarLog('../gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.starlog')
+
+    p = pynbody.load('../gas_merger0.1_thr10_Rx8_nometalcool/6/gas_merger0.1_thr10_Rx8_nometalcool.00613')
+    sl_p = pynbody.tipsy.StarLog('../gas_merger0.1_thr10_Rx8_nometalcool/gas_merger0.1_thr10_Rx8_nometalcool.starlog')
+
+    gp = pynbody.load('../gas_merger0.1_thr10/5/gas_merger0.1_thr10.00500')
+    
+    # the first section -- before splitting
+    new = pynbody.filt.HighPass('timeform', 0)
+    h_gp, bins_gp = np.histogram(gp.s[new]['timeform'],weights=gp.s[new]['massform'],bins=100)
+    scale = 1e9*(bins_gp[1]-bins_gp[0])
+    
+    axs[0].plot(.5*(bins_gp[:-1]+bins_gp[1:]), h_gp/scale*2.3e5)
+    
+    # the second section -- after the first split
+
+    h_p, bins_p = np.histogram(sl_p['tform'], 
+                               weights = sl_p['massform'],
+                               bins = 100)
+    scale = 1e9*(bins_p[1]-bins_p[0])
+    axs[1].plot(.5*(bins_p[:-1]+bins_p[1:]), h_p/scale*2.e5)
+    # the third section -- current s
+    print min(sl_s['tform'])
+    h_s, bins_s = np.histogram(sl_s['tform'], 
+                               weights = sl_s['massform'],
+                               bins = 100)
+    scale = 1e9*(bins_s[1]-bins_s[0])
+    axs[2].plot(.5*(bins_s[:-1]+bins_s[1:]), h_s/scale*2.3e5)
+    
+
+    
     
 
 def savefig(fname): 

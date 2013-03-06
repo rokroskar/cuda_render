@@ -168,6 +168,9 @@ def tform(self) :
     return self.s['tform']
 
 
+@pynbody.ramses.RamsesSnap.derived_quantity
+def temp(self) : 
+    return (self['p']*pynbody.units.m_p/pynbody.units.k/self['rho']).in_units('K')
 
     
 

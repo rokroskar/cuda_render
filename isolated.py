@@ -643,7 +643,7 @@ def plot_2D_grid(s, varx, vary, varz, gridsize=(10,10)) :
 def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.5,.2)) : 
     from scipy import polyfit 
 
-    prof = pynbody.analysis.profile.Profile(s.s[limits],calc_x=lambda x: x['age'],type='log',nbins=10,min=0.1)
+    prof = pynbody.analysis.profile.Profile(s.s[limits],calc_x=lambda x: x['age'],type='log',nbins=10,min=1)
 
     plt.plot(prof['rbins'],
              np.sqrt(prof['vr_disp']**2+prof['vt_disp']**2+prof['vz_disp']**2),'k-',label=r'$\sigma_{tot}$',linewidth=2)
@@ -664,9 +664,9 @@ def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.
     fitt = polyfit(np.log10(prof['rbins']),np.log10(prof['vt_disp']),1)
     fitz = polyfit(np.log10(prof['rbins']),np.log10(prof['vz_disp']),1)
     
-    #plt.plot(prof['rbins'],10**fitr[1]*prof['rbins']**fitr[0], 'r--')
-    #plt.plot(prof['rbins'],10**fitt[1]*prof['rbins']**fitt[0], 'r--')
-    #plt.plot(prof['rbins'],10**fitz[1]*prof['rbins']**fitz[0], 'r--')
+    plt.plot(prof['rbins'],10**fitr[1]*prof['rbins']**fitr[0], 'r--')
+    plt.plot(prof['rbins'],10**fitt[1]*prof['rbins']**fitt[0], 'r--')
+    plt.plot(prof['rbins'],10**fitz[1]*prof['rbins']**fitz[0], 'r--')
 
     print fittot
     print fitr
