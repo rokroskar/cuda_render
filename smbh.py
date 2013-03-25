@@ -85,8 +85,9 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
             if f.split('/')[-1] == near.split('/')[-1] : 
                 print 'found: ', f, i
                 flist = flist[i+1:]
+        appending = True
     except IOError: 
-        pass
+        orb = {'t': np.array([]), 'r': np.array([]), 'pos': np.array([])}
    
 
     assert(len(inds) == 2)
@@ -100,7 +101,7 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     t = np.append(orb['t'],t)
     r = np.append(orb['r'],r)
-    pos = np.append(orb['pos'],pos)
+    pos = np.append(orb['pos'],pos).reshape((len(t),2,3))
 
     plt.plot(t - t[0], r)
     plt.plot(t - t[0], r, 'or')

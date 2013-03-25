@@ -78,17 +78,28 @@ def load_snapshots(flist = None):
     return slist
 
 
-def load_snapshot_sequence(dir='./', ntiles = 20):
+def load_snapshot_sequence(dir='./', ntiles = 20, t1 = None, t2 = None):
     out1 = pynbody.load(smbh.nearest_output(0))
     out2 = pynbody.load(smbh.nearest_output(1e6))
 
-    t1 = out1.properties['time'].in_units('Myr')
-    t2 = out2.properties['time'].in_units('Myr')
+    if t1 is None:
+        t1 = out1.properties['time'].in_units('Myr')
+    if t2 is None: 
+        t2 = out2.properties['time'].in_units('Myr')
 
     times = np.linspace(t1,t2,ntiles)
 
     return [pynbody.load(x) for x in map(smbh.nearest_output, times)]
     
+
+def center_snapshot(s) : 
+    if np.diff(s[smbh.bh_index(s)]['r'])[0] > 0.2 : 
+            pynbody.analysis.halo.center(s,mode='ind',ind=smbh.bh_index(s),vel=False)
+    else:
+        pynbody.analysis.halo.center(s.g,mode='hyb',vel=False)
+
+    pynbody.analysis.halo.vel_center(s.g,cen_size=.5)
+ 
 
 def make_filmstrip_figure(slist): 
 
@@ -256,14 +267,13 @@ def central_vsigma(slist) :
     labels = ['nomet','met',]
     colors = ['b','r']
 
-    for i, s in enumerate([slist[0], slist[2]]) : 
-        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.001,max=1)
-        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.001,max=1)
+    for i, s in enumerate(slist) : 
+        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.01,max=1)
+        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.01,max=1)
     
 
-        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed']/pg['speed_disp'], colors[i], label=labels[i])
-        
-        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed']/ps['speed_disp'], colors[i])
+        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed']/pg['speed_disp'], label="t = %.0f"%s.properties['time'].in_units('Myr'))
+        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed']/ps['speed_disp'])
 
 
     for ax in axs: 
@@ -275,29 +285,29 @@ def central_vsigma(slist) :
     axs[1].set_title('stars')
     
 def central_velocity_profile(slist) : 
-    d = pynbody.filt.Disc(1,.5)
+    d = pynbody.filt.Disc(1,.1)
 
     fig, axs = plt.subplots(2,1, figsize=(8,12))
 
     labels = ['nomet','met',]
     colors = ['b','r']
 
-    for i, s in enumerate([slist[0], slist[2]]) : 
-        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.001,max=1)
-        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.001,max=1)
+    for i, s in enumerate(slist) : 
+        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.01,max=1)
+        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.01,max=1)
     
 
-        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed'], colors[i], label=labels[i])
-        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed_disp'], '%s--'%colors[i])
+        axs[0].plot(pg['rbins'].in_units('pc'),pg['vt'], label="t = %.0f"%s.properties['time'].in_units('Myr'))
+        axs[0].plot(pg['rbins'].in_units('pc'),pg['vt_disp'], '--')
 
 
-        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed'], colors[i])
-        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed_disp'],'%s--'%colors[i])
+        axs[1].plot(ps['rbins'].in_units('pc'),ps['vt'])
+        axs[1].plot(ps['rbins'].in_units('pc'),ps['vt_disp'],'--')
 
 
     for ax in axs: 
         ax.semilogx()
-        ax.set_ylim(0,1000)
+        ax.set_ylim(0,400)
         ax.set_xlabel(r'R [pc]')
         ax.set_ylabel(r'$v, v_{disp} \mathrm{~km/s}$')
     axs[0].legend()
@@ -429,7 +439,37 @@ def make_sfr_figure() :
     axs[2].plot(.5*(bins_s[:-1]+bins_s[1:]), h_s/scale*2.3e5)
     
 
+
+def make_movie(t1,t2) : 
+    import glob
+
+    fs = glob.glob('*/*.0????')
+    fs.sort(key=lambda x: x[-5:])
+    # nearest outputs to t1 and t2
+    f1 = smbh.nearest_output(t1)
+    f2 = smbh.nearest_output(t2)
+
+    for i, f in enumerate(fs) : 
+        if f.split('/')[-1] == f1.split('/')[-1] : 
+            ind1 = i
+        elif f.split('/')[-1] == f2.split('/')[-1] : 
+            ind2 = i
+            
+    print ind1, ind2
+
     
+    for i, f in enumerate(fs[ind1:ind2]) :
+        s = pynbody.load(f)
+        pynbody.analysis.halo.center(s,mode='ssc')
+        s.rotate_x(90)
+
+        im = pynbody.plot.image(s.g,qty='rho',units='Msol kpc^-2',width=.1)
+        smbh.overplot_bh(s,plt.gca())
+        plt.xlim(-.05,.05)
+        plt.ylim(-.05,.05)
+#        plt.imshow(np.log10(im))
+        plt.savefig('movie/edgeon%s.png'%str(i),format='png',bbox_inches='tight')
+        
     
 
 def savefig(fname): 

@@ -7,6 +7,7 @@
 import matplotlib.pylab as plt
 import numpy as np
 
+
 def make_tile_figure(nrow,ncol,func,*args,**kwargs) : 
 
     fig = plt.figure(figsize=(5*ncol,5*nrow))
@@ -50,3 +51,13 @@ def shrink_sphere(sim, r=None, shrink_factor = 0.7, min_particles = 100, verbose
         if verbose:
             print com,r,len(ind)
     return com
+
+def get_r200(s,p) : 
+    import pynbody
+    
+    ind = np.where(p['rbins'] > 100)
+
+    den = (p['mass_enc']/(4./3.*np.pi*p['rbins']**3))[ind]
+    den /= pynbody.analysis.cosmology.rho_crit(s,unit=den.units)
+
+    return np.interp(200.0,den[::-1],p['rbins'][ind][::-1])

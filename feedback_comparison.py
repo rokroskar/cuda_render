@@ -117,8 +117,8 @@ for l in paper_runs :
 
 
 
-def load_outputs(flist=list_all, outnum = 101): 
-    return map(lambda s: ram.load_center(s+'/output_%05d'%outnum), flist)
+def load_outputs(flist=list_all, outnum = 101, align = True): 
+    return map(lambda s: ram.load_center(s+'/output_%05d'%outnum,align), flist)
     
 
 def make_profile_comparisons(slist, names, load_profile = False, write_profile = False):
@@ -126,10 +126,10 @@ def make_profile_comparisons(slist, names, load_profile = False, write_profile =
     
     axs = axs.flatten()
 
-    disk = pynbody.filt.Disc(20,5)
+    disk = pynbody.filt.Disc(20,1)
 
     for i,s in enumerate(slist) : 
-        p = pynbody.analysis.profile.Profile(s,min=0.01,max=20,nbins=100, type = 'log', load_from_file=load_profile)
+        p = pynbody.analysis.profile.Profile(s,min=0.4,max=200,nbins=100, type = 'log', load_from_file=load_profile)
         ps = pynbody.analysis.profile.Profile(s.s[disk],min=0,max=20,nbins=20,load_from_file=load_profile)
         pg = pynbody.analysis.profile.Profile(s.g[disk],min=0,max=20,nbins=20,load_from_file=load_profile)
 
@@ -150,6 +150,7 @@ def make_profile_comparisons(slist, names, load_profile = False, write_profile =
         ax.set_xlim(0,19.5)
         ax.set_xlabel('$R$ [kpc]')
 
+    axs[-1].set_xlim(0,200)
     ax = axs[0]  
     ax.legend(frameon=False, prop = dict(size=12))
     ax.set_ylim(1e5,9e9)
@@ -178,7 +179,7 @@ def make_comparison_grid(slist, names, load_profile = False, write_profile = Fal
     
     f,axs = plt.subplots(4,ncolumns,figsize=(12,ncolumns*4))
     
-    disk = pynbody.filt.Disc(20,5)
+    disk = pynbody.filt.Disc(20,1)
 
     for i,s in enumerate(slist) : 
         if all_runs : 
@@ -268,27 +269,43 @@ def make_j_jmax_plot(slist,titles) :
     for ax in axs.flatten()[:2]: ax.set_xticklabels('')
     axs.flatten()[2].set_xlabel('$j/j_c(R)$')
 
-def make_image_figure(slist, names, figname) : 
+def make_image_figure(slist, names) : 
     import matplotlib.image as mpimg
     
     plt.ioff()
 
-    f,axs = plt.subplots(len(slist),2,figsize=(7,3*len(slist)))
+    f,axs = plt.subplots(len(slist)/2,4,figsize=(14,1.5*len(slist)))
 
+    axs = axs.flatten()
 
     for i,s in enumerate(slist): 
         s['pos'].convert_units('kpc')
         s['vel'].convert_units('km s^-1')
         sph = s[pynbody.filt.Sphere('100 kpc')]
 
-        pynbody.plot.image(sph.g, width=80, units = 'Msol kpc^-2',subplot=axs[i,0], show_cbar=False)
+        pynbody.plot.image(sph.g, width=80, units='Msol kpc^-2',subplot=axs[i*2], 
+                           show_cbar=False, approximate_fast=False, vmin=6.,vmax=9.,threaded=10)
         s.rotate_x(90)
-        pynbody.plot.image(sph.g, width=80, units = 'Msol kpc^-2',subplot=axs[i,1], show_cbar=False)
-        axs[i,0].annotate(names[i],(0.1,.87),xycoords='axes fraction', color = 'white')
+
+        pynbody.plot.image(sph.g, width=80, units='Msol kpc^-2',subplot=axs[i*2+1], 
+                           show_cbar=False, approximate_fast=False,vmin=6.,vmax=9.,threaded=10)
+        axs[i*2].annotate(names[i],(0.1,.87),xycoords='axes fraction', color = 'white')
         s.rotate_x(-90)
 
-    for i,ax in enumerate(axs.flatten()) : 
-        if not ax.is_last_row():
+
+    # set the colorbar
+    bb1 = axs[3].get_position()
+    bb2 = axs[-1].get_position()
+    cbax = f.add_axes([bb1.x1+.01,bb2.y0,0.02,bb1.y1-bb2.y0])
+    cb1 = f.colorbar(axs[-1].get_images()[0],cax=cbax)
+    cb1.set_label('log($\Sigma$) [M$_{\odot}/$kpc$^2$]',fontsize='smaller', fontweight='bold')
+
+    for tick in cb1.ax.get_yticklabels():
+        tick.set_fontsize('smaller')
+    #
+
+    for i,ax in enumerate(axs) : 
+        if not (ax.is_last_row()) & (i%4 == 0):
             ax.set_xticklabels('')
             ax.set_yticklabels('')
             ax.set_xlabel('')
@@ -299,16 +316,119 @@ def make_image_figure(slist, names, figname) :
 
     plt.subplots_adjust(hspace=.1,wspace=.05)
     
-    savefig(figname)
+    plt.ion()
+
+def make_temperature_figure(slist1, slist2, names) : 
+    import matplotlib.image as mpimg
+    
+    plt.ioff()
+
+    f,axs = plt.subplots(len(slist1)/2,4,figsize=(14,1.5*len(slist1)))
+
+    axs = axs.flatten()
+
+    for i in range(len(slist1)):
+        s = slist1[i]
+        s['pos'].convert_units('kpc')
+        s['vel'].convert_units('km s^-1')
+        sph = s[pynbody.filt.Sphere('500 kpc')]
+
+        pynbody.plot.image(sph.g, width=500, qty='temp', av_z='rho',subplot=axs[i*2], 
+                           show_cbar=False, approximate_fast=False, vmin=3.6,vmax=6.,threaded=8)
+        
+        s = slist2[i]
+        s['pos'].convert_units('kpc')
+        s['vel'].convert_units('km s^-1')
+        sph = s[pynbody.filt.Sphere('500 kpc')]
+        
+        s.rotate_x(90)
+        
+        pynbody.plot.image(sph.g, width=500, qty='temp', av_z='rho',subplot=axs[i*2+1], 
+                           show_cbar=False, approximate_fast=False, vmin=3.6,vmax=6.,threaded=8)
+
+        s.rotate_x(-90)
+        
+        axs[i*2].annotate(names[i],(0.1,.87),xycoords='axes fraction', color = 'white')
+        
+
+    # set the colorbar
+    bb1 = axs[3].get_position()
+    bb2 = axs[-1].get_position()
+    cbax = f.add_axes([bb1.x1+.01,bb2.y0,0.02,bb1.y1-bb2.y0])
+    cb1 = f.colorbar(axs[-1].get_images()[0],cax=cbax)
+    cb1.set_label('log($T$) [K]',fontsize='smaller', fontweight='bold')
+
+    for tick in cb1.ax.get_yticklabels():
+        tick.set_fontsize('smaller')
+    #
+
+    for i,ax in enumerate(axs) : 
+        if not (ax.is_last_row()) & (i%4 == 0):
+            ax.set_xticklabels('')
+            ax.set_yticklabels('')
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+        else : 
+            plt.setp(ax.get_xticklabels(), fontsize=10)
+            plt.setp(ax.get_yticklabels(), fontsize=10)
+
+    plt.subplots_adjust(hspace=.1,wspace=.05)
     
     plt.ion()
     
+def make_sfh_figure_singlepanel(slist,names) : 
+    from scipy.interpolate import interp1d
+
+    f,ax = plt.subplots()
+
+    sph = pynbody.filt.Sphere('20 kpc')
+
+    # read observational data
+
+    tt,aa,sfr,high,low = np.genfromtxt('/home/itp/roskar/rad_fbk/sfr_obs_12.txt').T
+
+#    ax.plot(tt[::10],sfr[::10],color='k')
+    ax.fill_between(tt[::10],sfr[::10]+high[::10],sfr[::10]-low[::10],alpha=.2,color='k')
+    ax.plot(tt[::10],sfr[::10],'--k')
+    
+
+    for i, s in enumerate(slist) : 
+        sub = s[sph]
+        with sub.immediate_mode:
+            masses = sub.s['mass'].in_units('Msol')
+
+        ind = np.where(pynbody.analysis.cosmology.age(sub)-sub.s['tform'] > .2)[0]
+        masses[ind] *= 1.2
+        
+        sfh,bins = np.histogram(sub.s['tform'].in_units('Gyr'),weights=masses.in_units('Msol'),
+                                range=[0,13.76],bins=50)
+        bins = .5*(bins[:-1]+bins[1:])
+        width = bins[1] - bins[0]
+        sfh /= width
+        if i < len(non_rad) : ind = 0
+        elif i < len(non_rad) + len(rad_fixed_kappa) : ind = 1
+        else: ind = 2
+        
+        if i == 0: 
+            ax.plot(bins,sfh/1e9,'--r', label=names[i])
+        else:
+            ax.plot(bins,sfh/1e9,color = get_color(i-1,len(slist)-1), label=names[i])
+
+    ax.set_ylabel('SFR [M$_{\odot}$/yr]')
+    ax.set_xlim(0,14)
+    ax.legend(loc = 'upper right', frameon=False, prop = dict(size=12))
+    ax.set_ylim(1e-3,20)
+    ax.set_xlim(.3,14)
+    ax.set_xlabel('$t$ [Gyr]')
+    
+    add_redshift_axis(slist[0],ax)
+
 def make_sfh_figure(slist, names) : 
     from scipy.interpolate import interp1d
 
     f,axs = plt.subplots(3,1,figsize=(8,10))
 
-    sph = pynbody.filt.Sphere('50 kpc')
+    sph = pynbody.filt.Sphere('20 kpc')
 
     # read observational data
 
@@ -322,7 +442,13 @@ def make_sfh_figure(slist, names) :
 
 
     for i, s in enumerate(slist) : 
-        sfh,bins = np.histogram(s.s['tform'].in_units('Gyr'),weights=s.s['mass'].in_units('Msol'),
+        sub = s[sph]
+
+        masses = sub.s['mass'].in_units('Msol')
+        ind = np.where(pynbody.analysis.cosmology.age(sub)-sub.s['tform'] > .2)[0]
+        masses[ind] *= 1.2
+        
+        sfh,bins = np.histogram(sub.s['tform'].in_units('Gyr'),weights=masses.in_units('Msol'),
                                 range=[0,13.76],bins=50)
         bins = .5*(bins[:-1]+bins[1:])
         width = bins[1] - bins[0]
@@ -344,9 +470,58 @@ def make_sfh_figure(slist, names) :
     for ax in axs.flatten()[:2] : ax.set_xticklabels('')
     axs.flatten()[-1].set_xlabel('$t$ [Gyr]')
     
-    
+def make_abundance_matching_figure(slist, names) : 
+    from utils import get_r200
+    xmasses = np.logspace(11.5,12.,20)
+    ystarmasses, errors = pynbody.plot.stars.moster(xmasses,0.0)
+
+    f,ax = plt.subplots()
+
+    ax.fill_between(np.log10(xmasses),np.log10(np.array(ystarmasses)/np.array(errors)), 
+                    y2 = np.log10(np.array(ystarmasses)*np.array(errors)), facecolor='#BBBBBB',color='#BBBBBB')
+
+    ax.plot(np.log10(xmasses),np.log10(ystarmasses),'--k')
+    ax.plot(np.log10(xmasses),np.log10(xmasses*(slist[0].g['mass'].sum()+slist[0].s['mass'].sum())/slist[0].d['mass'].sum()),color='red',linewidth=2)
+
+    for i,s in enumerate(slist) :
+        r200 = get_r200(s,pynbody.analysis.profile.Profile(s,ndim=3,min=.4,max=200,type = 'log'))
+        print r200
+        sph = s[pynbody.filt.Sphere(r200/10.0)]
+        sph2 = s[pynbody.filt.Sphere(r200)]
+
+        smass = sph.s['mass'].sum().in_units('Msol')
+        hmass = sph2['mass'].sum().in_units('Msol')
         
+        print '%s %e %e'%(s.filename,smass,hmass)
+
+        if i==0 : 
+            ax.plot(np.log10(hmass),np.log10(smass),'rx',label=names[i])
+        else:
+            ax.plot(np.log10(hmass),np.log10(smass),'o',color=get_color(i-1,len(slist)-1),label=names[i])
+        
+    ax.legend(frameon=False, prop = dict(size=12),loc='upper left',scatterpoints=1)
+    ax.set_xlim(11.7,11.9)
+    ax.set_ylim(10.0,11.5)
+    ax.set_ylabel('log$(M_{\star})$ [M$_{\odot}$]')
+    ax.set_xlabel('log$(M_{h})$ [M$_{\odot}$]')
+
+
+def add_redshift_axis(s,ax) : 
+    newax = ax.twiny()
+
+    z_arr = np.array([4,3,2,1,.5,.25,.1,0])
+    snap_arg = []
+    for i in range(len(z_arr)) : 
+        snap_arg.append(s)
+    times = map(pynbody.analysis.cosmology.age, snap_arg, z_arr)
+
+    newax.set_xticks(times)
+    newax.set_xticklabels(z_arr)
+    newax.set_xlabel('redshift')
+    plt.setp(newax.get_xticklabels(),fontsize=15)
+
 def savefig(name, formats = ['eps','pdf']) : 
     for fmt in formats :
         plt.savefig('feedback_comparison_paper/'+name+'.%s'%fmt,format=fmt,bbox_inches='tight')
+
 
