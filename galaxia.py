@@ -10,7 +10,9 @@ def make_galaxia_input(sim, run_enbid=False) :
     
     s = pynbody.load(sim)
     pynbody.analysis.angmom.faceon(s)
-
+    
+    filt = pynbody.filt.Disc(15,2.5)
+#    s=s[filt]
     filename = s.filename
 
       
@@ -22,7 +24,12 @@ def make_galaxia_input(sim, run_enbid=False) :
     s.s[bad]['mets'] = -5.0
 
     s.s['mets']+=.1
-  
+    
+    # shift metallicities and ages around in a random way to avoid identical values
+    s.s['mets'] += np.random.normal(0,0.1,len(s.s))
+    s.s['ages'] = s.s['age'] + np.random.normal(0,0.1,len(s.s))
+
+    print "unique mets = %s and ages = %s"%(len(np.unique(s.s['mets'])), len(np.unique(s.s['ages'])))
     # make the pos array
 
     pos = np.array([s.s['x'],s.s['y'],s.s['z'],s.s['vx'],s.s['vy'],s.s['vz'],s.s['age'],s.s['mets']]).T
@@ -35,7 +42,7 @@ def make_galaxia_input(sim, run_enbid=False) :
     ebf.write(filename+'_galaxia.ebf', '/Mass', s.s['mass'].in_units('Msol'), 'a')
     ebf.write(filename+'_galaxia.ebf', '/feh', s.s['mets'], 'a')
     ebf.write(filename+'_galaxia.ebf', '/alpha', s.s['alpha'], 'a')
-    ebf.write(filename+'_galaxia.ebf', '/age', s.s['age'], 'a')
+    ebf.write(filename+'_galaxia.ebf', '/age', s.s['ages'], 'a')
     ebf.write(filename+'_galaxia.ebf', '/id', s.s['iord'], 'a')
     
     
@@ -49,8 +56,8 @@ def make_galaxia_input(sim, run_enbid=False) :
 
         # run enbid
 
-        os.system('~/bin/enbid -dmc --dim=3 --ngb=64 --dsuffix=_d3n64 %s_galaxia.ebf'%filename)
-#        os.system('~/bin/enbid -dmc --dim=6 --ngb=64 --dsuffix=_d6n64 %s_galaxia.ebf'%filename)
+#        os.system('~/bin/enbid -dmc --dim=3 --ngb=64 --dsuffix=_d3n64 %s_galaxia.ebf'%filename)
+        os.system('~/bin/enbid -dmc --dim=6 --ngb=64 --dsuffix=_d6n64 %s_galaxia.ebf'%filename)
 #        os.system('~/bin/enbid -dm --gmetric=1 --dim=8 --ngb=64 --dsuffix=_d8n64 %s_galaxia.ebf'%filename)
 
 
