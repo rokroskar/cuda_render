@@ -21,8 +21,8 @@ def bh_index(sim) :
     return np.array(np.where(sim['mass'] == sim['mass'].max())).flatten()
 
 
-def overplot_bh(sim):
-    plt.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'ro')
+def overplot_bh(sim,ax):
+    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'ro')
     
 
 def plot_jeansratio(sim):
@@ -69,20 +69,39 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     flist = glob.glob(dir+'*/*.0????')
     flist.sort(key=lambda x: x[-5:])
-    print flist[0:10]
-
+    
     s = pyn.load(flist[0])
     inds = bh_index(s.d)
 
+    # check if a bh_orbit file already exists -- if it's there, check
+    # the latest time and only process the new files 
+    
+    appending = False
+
+    try: 
+        orb = np.load(dir+'bh_orbit.npz')
+        near = nearest_output(orb['t'].max())
+        for i, f in enumerate(flist) : 
+            if f.split('/')[-1] == near.split('/')[-1] : 
+                print 'found: ', f, i
+                flist = flist[i+1:]
+        appending = True
+    except IOError: 
+        orb = {'t': np.array([]), 'r': np.array([]), 'pos': np.array([])}
+   
+
     assert(len(inds) == 2)
 
-    pos, vel, mass, phi, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark', test=test)
+    pos, vel, mass, phi, t = orbits.trace_orbits_parallel(flist, inds, processes, family='dark', mode = 'hyb', test=test)
 
     dpos = np.diff(pos,axis=1).squeeze()
 
     r = pyn.array.SimArray(np.sqrt(np.sum(dpos**2,axis=1)),'kpc')
     t = pyn.array.SimArray(t, 'Gyr').in_units('Myr')
 
+    t = np.append(orb['t'],t)
+    r = np.append(orb['r'],r)
+    pos = np.append(orb['pos'],pos).reshape((len(t),2,3))
 
     plt.plot(t - t[0], r)
     plt.plot(t - t[0], r, 'or')

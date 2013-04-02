@@ -60,12 +60,14 @@ if __name__ == '__main__':
     make_gas_map(load_ramses(int(sys.argv[1])))
 
 
-def hop_center(s):
-
-    if s.filename[-1] == '/' : name = s.filename[-6:-1] 
-    else: name = s.filename[-5:]
-
-    filename = s.filename[:-12]+'hop/grp%s.pos'%name
+def load_hop(s): 
+    
+    if s.filename[-1] == '/' : 
+        name = s.filename[-6:-1] 
+        filename = s.filename[:-13]+'hop/grp%s.pos'%name
+    else: 
+        name = s.filename[-5:]
+        filename = s.filename[:-12]+'hop/grp%s.pos'%name
     
     try : 
         data = np.genfromtxt(filename,unpack=True)
@@ -73,6 +75,11 @@ def hop_center(s):
         import os
         os.system('cd %s;/home/itp/roskar/ramses/galaxy_formation/script_hop.sh %d;cd ..'%(s.filename[:-12],int(name)))
         data = np.genfromtxt(filename,unpack=True)
+
+    return data
+
+def hop_center(s):
+    data = load_hop(s)
 
     cen = data.T[0][4:7]
     vcen = data.T[0][7:10]
@@ -115,14 +122,19 @@ def make_comparison_figure(dirlist,names):
         axs[i].xaxis.set_ticklabels("")
 
     
-def load_center(output):
+def load_center(output, align=True):
     s = pynbody.load(output)
     hop_center(s)
 #    s.physical_units()
     st = s[pynbody.filt.Sphere('100 kpc')]
     
     cen = pynbody.analysis.halo.center(st,retcen=True,mode='ssc')
-    pynbody.analysis.angmom.faceon(st.g,disk_size='5 kpc',cen=cen,mode='ssc')
+    
+    if align: 
+        pynbody.analysis.angmom.faceon(st.g,disk_size='5 kpc',cen=cen,mode='ssc')
+    else :
+        s['pos'] -= cen
+
    # s.s['age'] = s._info['time'] - s.s['age']
    # s.s['age']*=s._info['unit_t']
    # s.s['age'].units = 's'
@@ -148,7 +160,14 @@ def tform(self) :
     top.s['tform'] = -1.0
     done = 0
     for i in range(ncpu) : 
-        f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+        try : 
+            f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+        except IOError : 
+            import os
+            
+            os.system("cd %s; mkdir birth; /home/itp/roskar/ramses/galaxy_formation/part2birth -inp output_%s; cd .."%(top.filename[:-12],top._timestep_id))
+            f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+
         n = fread(f,1,'i')
         n /= 8
         ages = fread(f,n,'d')
@@ -161,6 +180,9 @@ def tform(self) :
     return self.s['tform']
 
 
+@pynbody.ramses.RamsesSnap.derived_quantity
+def temp(self) : 
+    return (self['p']*pynbody.units.m_p/pynbody.units.k/self['rho']).in_units('K')
 
     
 

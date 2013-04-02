@@ -643,7 +643,7 @@ def plot_2D_grid(s, varx, vary, varz, gridsize=(10,10)) :
 def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.5,.2)) : 
     from scipy import polyfit 
 
-    prof = pynbody.analysis.profile.Profile(s.s[limits],calc_x=lambda x: x['age'],type='log',nbins=10,min=0.1)
+    prof = pynbody.analysis.profile.Profile(s.s[limits],calc_x=lambda x: x['age'],type='log',nbins=10,min=1)
 
     plt.plot(prof['rbins'],
              np.sqrt(prof['vr_disp']**2+prof['vt_disp']**2+prof['vz_disp']**2),'k-',label=r'$\sigma_{tot}$',linewidth=2)
@@ -664,9 +664,9 @@ def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.
     fitt = polyfit(np.log10(prof['rbins']),np.log10(prof['vt_disp']),1)
     fitz = polyfit(np.log10(prof['rbins']),np.log10(prof['vz_disp']),1)
     
-    #plt.plot(prof['rbins'],10**fitr[1]*prof['rbins']**fitr[0], 'r--')
-    #plt.plot(prof['rbins'],10**fitt[1]*prof['rbins']**fitt[0], 'r--')
-    #plt.plot(prof['rbins'],10**fitz[1]*prof['rbins']**fitz[0], 'r--')
+    plt.plot(prof['rbins'],10**fitr[1]*prof['rbins']**fitr[0], 'r--')
+    plt.plot(prof['rbins'],10**fitt[1]*prof['rbins']**fitt[0], 'r--')
+    plt.plot(prof['rbins'],10**fitz[1]*prof['rbins']**fitz[0], 'r--')
 
     print fittot
     print fitr
@@ -677,26 +677,41 @@ def plot_age_velocity_relation(s, limits = pynbody.filt.SolarNeighborhood(7.5,8.
     
 
 
-def plot_zrms_vs_r(s,rs=[2,4,6,8,10,12,14]) : 
+def plot_zrms_vs_r(s,rs=[2,4,6,8,10,12,14], ages = None) : 
     pynbody.analysis.angmom.faceon(s)
 
     f, ax = plt.subplots()
 
-    zrms = np.zeros(len(rs))
+    if ages is None : 
+        ages = np.array([[s.s['age'].min(), s.s['age'].max()]])
+    else : 
+        ages = np.array(ages)
+
+    print ages
+
+
+    zrms = np.zeros((len(rs),len(ages)))
 
     for i,r in enumerate(rs) : 
 
 #        p = pynbody.analysis.profile.VerticalProfile(s.s, r-.5,r+.5,3.0,nbins=30)
-        
-        ind = np.where((s.s['rxy'] < r+.5) & (s.s['rxy'] > r-.5))[0]
-        zrms[i] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
+        if ages is not None : 
+            for j, age in enumerate(ages) : 
+                ind = np.where((s.s['rxy'] < r+.5) & (s.s['rxy'] > r-.5) & 
+                               (s.s['age'] > age.min()) & (s.s['age'] < age.max()))[0]
+                zrms[i,j] = np.sqrt((s.s['z'][ind]**2).sum()/len(ind))
+                print len(ind), age.min(), age.max()
 
-    ax.plot(rs, zrms, 'o')
+    for i in range(len(ages)) :
+        ax.plot(rs, zrms[:,i], 'o', label = '%.1f $<$ age $<$ %.1f'%(ages[i].min(),ages[i].max()))
+
     ax.set_xlabel('R [kpc]')
     ax.set_ylabel('$z_{rms}$')
     ax.set_ylim(0,1)
     ax.set_xlim(0,15)
-        
+    ax.legend(loc='upper left',frameon=False)
+    return zrms
+
 def compare_zrms_vs_r(slist, names, rs = [2,4,6,8,10,12,14], agefilt = pynbody.filt.BandPass('age',0,10), ax = None):
     if ax is None: 
         fig, ax = plt.subplots()
@@ -721,3 +736,5 @@ def compare_zrms_vs_r(slist, names, rs = [2,4,6,8,10,12,14], agefilt = pynbody.f
     ax.legend(loc='upper left')
 
         
+
+    

@@ -14,10 +14,10 @@ import multiprocessing
 
 class KeyboardInterruptError(Exception): pass
 
-def single_file_pos(file, pinds, family) : 
+def single_file_pos(file, pinds, family, mode) : 
     try: 
         s = pynbody.load(file)
-        pynbody.analysis.halo.center(s)
+        pynbody.analysis.halo.center(s, mode = mode)
         cen_size = 5
         cen = s.star[filt.Sphere(cen_size)]
         
@@ -101,7 +101,7 @@ def trace_orbits_wrap(listinds) :
 
 
 
-def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count()/4, block=True, test = False, family='star'): 
+def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count()/4, block=True, test = False, family='star', mode = 'hyb'): 
     
     from multiprocessing import Pool
     import itertools
@@ -118,7 +118,7 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
 
         try : 
             res = np.array(pool.map(trace_orbits_wrap, 
-                                    itertools.izip(filelist, itertools.repeat(pinds), itertools.repeat(family))))
+                                    itertools.izip(filelist, itertools.repeat(pinds), itertools.repeat(family), itertools.repeat(mode))))
             pool.close()
         except KeyboardInterrupt : 
             pool.terminate()
@@ -127,7 +127,7 @@ def trace_orbits_parallel(filelist, pinds, processes = multiprocessing.cpu_count
             pool.join()
     else : 
         res = np.array(map(trace_orbits_wrap, 
-                                    itertools.izip(filelist, itertools.repeat(pinds), itertools.repeat(family))))
+                                    itertools.izip(filelist, itertools.repeat(pinds), itertools.repeat(family), itertools.repeat(mode))))
 
     for i in range(len(res)) : 
         pos[i] = res[i][0]
