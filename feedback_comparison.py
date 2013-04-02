@@ -111,9 +111,14 @@ names_all = names_non_rad + names_fixed_kappa + names_var_kappa
 list_all = non_rad + rad_fixed_kappa + rad_var_kappa
 
 paper_runs = ['nof','std','rad_kappa5','rad_kappa10','rad3','rad_imf3']
-paper_names = []
-for l in paper_runs : 
-    paper_names.append(l.replace('_','-'))
+
+paper_names = ['no feedback',
+               '$\kappa = 0$',
+               '$\kappa = 5$',
+               '$\kappa = 10$',
+               '$\kappa = 50$',
+               'var. $\kappa$']
+
 
 
 
@@ -126,12 +131,12 @@ def make_profile_comparisons(slist, names, load_profile = False, write_profile =
     
     axs = axs.flatten()
 
-    disk = pynbody.filt.Disc(20,1)
+    disk = pynbody.filt.Disc(30,1)
 
     for i,s in enumerate(slist) : 
-        p = pynbody.analysis.profile.Profile(s,min=0.4,max=200,nbins=100, type = 'log', load_from_file=load_profile)
-        ps = pynbody.analysis.profile.Profile(s.s[disk],min=0,max=20,nbins=20,load_from_file=load_profile)
-        pg = pynbody.analysis.profile.Profile(s.g[disk],min=0,max=20,nbins=20,load_from_file=load_profile)
+        p = pynbody.analysis.profile.Profile(s,min=0.4,max=30,nbins=20, type = 'log', load_from_file=load_profile)
+        ps = pynbody.analysis.profile.Profile(s.s[disk],min=0,max=30,nbins=20,load_from_file=load_profile)
+        pg = pynbody.analysis.profile.Profile(s.g[disk],min=0,max=30,nbins=20,load_from_file=load_profile)
 
         color = get_color(i,len(slist))
 
@@ -147,10 +152,9 @@ def make_profile_comparisons(slist, names, load_profile = False, write_profile =
             pg.write()
 
     for ax in axs : 
-        ax.set_xlim(0,19.5)
+        ax.set_xlim(0,25)
         ax.set_xlabel('$R$ [kpc]')
 
-    axs[-1].set_xlim(0,200)
     ax = axs[0]  
     ax.legend(frameon=False, prop = dict(size=12))
     ax.set_ylim(1e5,9e9)
@@ -249,7 +253,7 @@ def make_j_jmax_single(slist,titles) :
                 bins=100, normed = True, label = titles[i])
     
     ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
-    ax.set_xlabel('$j/j_c(R)$')
+    ax.set_xlabel('$j_z/j_c(R)$')
 
     
 def make_j_jmax_plot(slist,titles) : 
@@ -267,7 +271,7 @@ def make_j_jmax_plot(slist,titles) :
     
     for ax in axs : ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
     for ax in axs.flatten()[:2]: ax.set_xticklabels('')
-    axs.flatten()[2].set_xlabel('$j/j_c(R)$')
+    axs.flatten()[2].set_xlabel('$j_z/j_c(R)$')
 
 def make_image_figure(slist, names) : 
     import matplotlib.image as mpimg
@@ -281,14 +285,16 @@ def make_image_figure(slist, names) :
     for i,s in enumerate(slist): 
         s['pos'].convert_units('kpc')
         s['vel'].convert_units('km s^-1')
+        s.g['rho'].convert_units('Msol kpc^-3')
+
         sph = s[pynbody.filt.Sphere('100 kpc')]
 
-        pynbody.plot.image(sph.g, width=80, units='Msol kpc^-2',subplot=axs[i*2], 
-                           show_cbar=False, approximate_fast=False, vmin=6.,vmax=9.,threaded=10)
+        pynbody.plot.image(sph.g, width=60, qty='rho',av_z='rho',subplot=axs[i*2],cmap=plt.cm.Greys_r,
+                           show_cbar=False, approximate_fast=False, vmin=2.5,vmax=9,threaded=10)
         s.rotate_x(90)
 
-        pynbody.plot.image(sph.g, width=80, units='Msol kpc^-2',subplot=axs[i*2+1], 
-                           show_cbar=False, approximate_fast=False,vmin=6.,vmax=9.,threaded=10)
+        pynbody.plot.image(sph.g, width=60, qty='rho',av_z='rho',subplot=axs[i*2+1],cmap=plt.cm.Greys_r,
+                           show_cbar=False, approximate_fast=False,vmin=2.5,vmax=9,threaded=10)
         axs[i*2].annotate(names[i],(0.1,.87),xycoords='axes fraction', color = 'white')
         s.rotate_x(-90)
 
@@ -298,7 +304,7 @@ def make_image_figure(slist, names) :
     bb2 = axs[-1].get_position()
     cbax = f.add_axes([bb1.x1+.01,bb2.y0,0.02,bb1.y1-bb2.y0])
     cb1 = f.colorbar(axs[-1].get_images()[0],cax=cbax)
-    cb1.set_label('log($\Sigma$) [M$_{\odot}/$kpc$^2$]',fontsize='smaller', fontweight='bold')
+    cb1.set_label(r'log($\rho$) [M$_{\odot}/$kpc$^3$]',fontsize='smaller', fontweight='bold')
 
     for tick in cb1.ax.get_yticklabels():
         tick.set_fontsize('smaller')
@@ -318,64 +324,6 @@ def make_image_figure(slist, names) :
     
     plt.ion()
 
-def make_temperature_figure(slist1, slist2, names) : 
-    import matplotlib.image as mpimg
-    
-    plt.ioff()
-
-    f,axs = plt.subplots(len(slist1)/2,4,figsize=(14,1.5*len(slist1)))
-
-    axs = axs.flatten()
-
-    for i in range(len(slist1)):
-        s = slist1[i]
-        s['pos'].convert_units('kpc')
-        s['vel'].convert_units('km s^-1')
-        sph = s[pynbody.filt.Sphere('500 kpc')]
-
-        pynbody.plot.image(sph.g, width=500, qty='temp', av_z='rho',subplot=axs[i*2], 
-                           show_cbar=False, approximate_fast=False, vmin=3.6,vmax=6.,threaded=8)
-        
-        s = slist2[i]
-        s['pos'].convert_units('kpc')
-        s['vel'].convert_units('km s^-1')
-        sph = s[pynbody.filt.Sphere('500 kpc')]
-        
-        s.rotate_x(90)
-        
-        pynbody.plot.image(sph.g, width=500, qty='temp', av_z='rho',subplot=axs[i*2+1], 
-                           show_cbar=False, approximate_fast=False, vmin=3.6,vmax=6.,threaded=8)
-
-        s.rotate_x(-90)
-        
-        axs[i*2].annotate(names[i],(0.1,.87),xycoords='axes fraction', color = 'white')
-        
-
-    # set the colorbar
-    bb1 = axs[3].get_position()
-    bb2 = axs[-1].get_position()
-    cbax = f.add_axes([bb1.x1+.01,bb2.y0,0.02,bb1.y1-bb2.y0])
-    cb1 = f.colorbar(axs[-1].get_images()[0],cax=cbax)
-    cb1.set_label('log($T$) [K]',fontsize='smaller', fontweight='bold')
-
-    for tick in cb1.ax.get_yticklabels():
-        tick.set_fontsize('smaller')
-    #
-
-    for i,ax in enumerate(axs) : 
-        if not (ax.is_last_row()) & (i%4 == 0):
-            ax.set_xticklabels('')
-            ax.set_yticklabels('')
-            ax.set_xlabel('')
-            ax.set_ylabel('')
-        else : 
-            plt.setp(ax.get_xticklabels(), fontsize=10)
-            plt.setp(ax.get_yticklabels(), fontsize=10)
-
-    plt.subplots_adjust(hspace=.1,wspace=.05)
-    
-    plt.ion()
-    
 def make_sfh_figure_singlepanel(slist,names) : 
     from scipy.interpolate import interp1d
 
@@ -388,9 +336,16 @@ def make_sfh_figure_singlepanel(slist,names) :
     tt,aa,sfr,high,low = np.genfromtxt('/home/itp/roskar/rad_fbk/sfr_obs_12.txt').T
 
 #    ax.plot(tt[::10],sfr[::10],color='k')
-    ax.fill_between(tt[::10],sfr[::10]+high[::10],sfr[::10]-low[::10],alpha=.2,color='k')
-    ax.plot(tt[::10],sfr[::10],'--k')
+    ax.fill_between(tt[::10],sfr[::10]+high[::10],sfr[::10]-low[::10],alpha=.2,color='k',label='Moster')
+#    ax.plot(tt[::10],sfr[::10],'--k')
     
+    # leitner data
+
+    t,z,sfr = get_leitner_data('10.40')
+    t2,z2,sfr2 = get_leitner_data('10.60')
+
+    ax.fill_between(pynbody.analysis.cosmology.age(slist[0],z),sfr,sfr2,alpha=.2,color='b',label='Leitner')
+
 
     for i, s in enumerate(slist) : 
         sub = s[sph]
@@ -405,14 +360,12 @@ def make_sfh_figure_singlepanel(slist,names) :
         bins = .5*(bins[:-1]+bins[1:])
         width = bins[1] - bins[0]
         sfh /= width
-        if i < len(non_rad) : ind = 0
-        elif i < len(non_rad) + len(rad_fixed_kappa) : ind = 1
-        else: ind = 2
         
-        if i == 0: 
-            ax.plot(bins,sfh/1e9,'--r', label=names[i])
-        else:
-            ax.plot(bins,sfh/1e9,color = get_color(i-1,len(slist)-1), label=names[i])
+        #if i == 0: 
+        #    ax.plot(bins,sfh/1e9,'--r', label=names[i])
+        #else:
+        ax.plot(bins,sfh/1e9,color = get_color(i,len(slist)), label=names[i])
+
 
     ax.set_ylabel('SFR [M$_{\odot}$/yr]')
     ax.set_xlim(0,14)
@@ -423,6 +376,8 @@ def make_sfh_figure_singlepanel(slist,names) :
     
     add_redshift_axis(slist[0],ax)
 
+
+    
 def make_sfh_figure(slist, names) : 
     from scipy.interpolate import interp1d
 
@@ -477,11 +432,12 @@ def make_abundance_matching_figure(slist, names) :
 
     f,ax = plt.subplots()
 
-    ax.fill_between(np.log10(xmasses),np.log10(np.array(ystarmasses)/np.array(errors)), 
-                    y2 = np.log10(np.array(ystarmasses)*np.array(errors)), facecolor='#BBBBBB',color='#BBBBBB')
+    ax.fill_between(xmasses,np.array(ystarmasses)/np.array(errors)/xmasses, 
+                    y2 = np.array(ystarmasses)*np.array(errors)/xmasses, facecolor='#BBBBBB',color='#BBBBBB')
 
-    ax.plot(np.log10(xmasses),np.log10(ystarmasses),'--k')
-    ax.plot(np.log10(xmasses),np.log10(xmasses*(slist[0].g['mass'].sum()+slist[0].s['mass'].sum())/slist[0].d['mass'].sum()),color='red',linewidth=2)
+    ax.plot(xmasses,ystarmasses/xmasses,'--k')
+
+#    ax.plot(xmasses,np.ones(len(xmasses))*(slist[0].g['mass'].sum()+slist[0].s['mass'].sum())/slist[0].d['mass'].sum(),color='red',linewidth=2)
 
     for i,s in enumerate(slist) :
         r200 = get_r200(s,pynbody.analysis.profile.Profile(s,ndim=3,min=.4,max=200,type = 'log'))
@@ -492,18 +448,18 @@ def make_abundance_matching_figure(slist, names) :
         smass = sph.s['mass'].sum().in_units('Msol')
         hmass = sph2['mass'].sum().in_units('Msol')
         
-        print '%s %e %e'%(s.filename,smass,hmass)
+        print '%s %e %e'%(s.filename,np.log10(smass),hmass)
 
-        if i==0 : 
-            ax.plot(np.log10(hmass),np.log10(smass),'rx',label=names[i])
-        else:
-            ax.plot(np.log10(hmass),np.log10(smass),'o',color=get_color(i-1,len(slist)-1),label=names[i])
+#        if i==0 : 
+ #           ax.plot(np.log10(hmass),smass/hmass,'rx',label=names[i])
+ #       else:
+        ax.plot(hmass,smass/hmass,'o',color=get_color(i,len(slist)),label=names[i])
         
     ax.legend(frameon=False, prop = dict(size=12),loc='upper left',scatterpoints=1)
-    ax.set_xlim(11.7,11.9)
-    ax.set_ylim(10.0,11.5)
-    ax.set_ylabel('log$(M_{\star})$ [M$_{\odot}$]')
-    ax.set_xlabel('log$(M_{h})$ [M$_{\odot}$]')
+    ax.set_xlim(.4e12,.7e12)
+ #  ax.set_ylim(10.0,11.5)
+    ax.set_ylabel('$M_{\star}/M_{h}$')
+    ax.set_xlabel('$M_{h}$ [M$_{\odot}$]')
 
 
 def add_redshift_axis(s,ax) : 
@@ -525,3 +481,69 @@ def savefig(name, formats = ['eps','pdf']) :
         plt.savefig('feedback_comparison_paper/'+name+'.%s'%fmt,format=fmt,bbox_inches='tight')
 
 
+def get_leitner_data(mass) : 
+    data=np.genfromtxt('/home/itp/roskar/rad_fbk/sfrs/sfr%s'%mass)
+    return data[:,0],data[:,1],data[:,2]
+
+
+def make_rgb_figure(runs,names,outnum,width) : 
+    from utils import clear_labels
+
+    f,axs = plt.subplots(2,3,figsize=(12.5,8))
+
+    for i, run in enumerate(runs) : 
+        ax = axs.flatten()[i]
+        ax.imshow(plt.imread("%s_output_%05d.png"%(run,outnum)),origin='lower')
+        ax.annotate(names[i],(50,450),color='white')
+        if i == 0: 
+            ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
+                        arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
+            ax.annotate("%s kpc"%str(width), xy=(0.38,0.065), color ="white",fontsize='smaller', 
+                        xycoords = 'axes fraction')
+
+    for ax in axs.flatten() : clear_labels(ax)
+    plt.subplots_adjust(hspace=.05,wspace=.05)
+
+def make_all_plots(sl,sl2,names) : 
+    
+    # image figure 
+
+    make_image_figure(sl,names)
+    savefig('allruns_images')
+
+    # profile comparisons figure
+
+    make_profile_comparisons(sl,names,True,True)
+    savefig('radial_properties')
+
+    # j/jc figure
+
+    make_j_jmax_single(sl,names)
+    savefig('jjc')
+
+    # SFR figure
+
+    make_sfh_figure_singlepanel(sl,names)
+    savefig('sfh')
+    
+    # abundance matching
+    
+    make_abundance_matching_figure(sl,names)
+    savefig('abundance_matching')
+
+    
+    # highz maps
+    for s in sl2 : 
+        ram.make_rgb_image(s.g[pynbody.filt.Sphere('300 kpc')],400,filename='%s.png'%(s.filename.replace('/','_')))
+    make_rgb_figure(paper_runs,paper_names,34,400)
+    savefig('rgb_highz')
+
+    # lowz maps
+    for s in sl : 
+        s.rotate_x(90)
+        ram.make_rgb_image(s.g[pynbody.filt.Sphere('350 kpc')],500,filename='%s.png'%(s.filename.replace('/','_')))
+        s.rotate_x(-90)
+    make_rgb_figure(paper_runs,paper_names,101,500)
+    savefig('rgb_lowz')
+
+    

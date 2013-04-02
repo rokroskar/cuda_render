@@ -128,24 +128,114 @@ def load_center(output, align=True):
 #    s.physical_units()
     st = s[pynbody.filt.Sphere('100 kpc')]
     
-    cen = pynbody.analysis.halo.center(st,retcen=True,mode='ssc')
+    cen = pynbody.analysis.halo.center(st,retcen=True,mode='ssc',verbose=True)
     
     if align: 
-        pynbody.analysis.angmom.faceon(st.g,disk_size='5 kpc',cen=cen,mode='ssc')
+        pynbody.analysis.angmom.faceon(st.s,disk_size='10 kpc',cen=cen,mode='ssc')
     else :
         s['pos'] -= cen
-
-   # s.s['age'] = s._info['time'] - s.s['age']
-   # s.s['age']*=s._info['unit_t']
-   # s.s['age'].units = 's'
-   # old = np.where(s.s['age'].in_units('Myr') > 10)[0]
-   # s.s['oldmass'] = s.s['mass']
-   # s.s['mass'][old] *= s.s['age'].in_units('Myr')[old]**(-.7)
 
     s['pos'].convert_units('kpc')
     s['vel'].convert_units('km s^-1')
 
     return s
+
+def luminosity_weighted_mass(s):
+    del(s.s['age'])
+    s.s['age'] = s.properties['time'].in_units('Gyr') - s.s['tform']
+    s.s['age'].convert_units('Gyr')
+    old = np.where(s.s['age'].in_units('Myr') > 10)[0]
+    s.s['oldmass'] = s.s['mass']
+    s.s['mass'][old] *= s.s['age'].in_units('Myr')[old]**(-.7)
+
+
+
+
+def convert_to_tipsy(output) : 
+    s = load_center(output)
+
+    for key in ['pos','vel','mass','iord','metal'] : 
+        try: 
+            s[key]
+        except:
+            pass
+
+    s['eps'] = s.g['smooth'].min()
+
+    for key in ['rho','temp','p']:
+        s.g[key]
+
+    print s.g['temp']
+
+    s.s['tform']
+    
+    massunit = 2.222286e5  # in Msol
+    dunit = 1.0 # in kpc
+    denunit = massunit/dunit**3
+    velunit = 8.0285 * np.sqrt(6.67384e-8*denunit) * dunit
+    timeunit = dunit / velunit * 0.97781311
+
+    s['pos'].convert_units('kpc')
+    s['vel'].convert_units('%e km s^-1'%velunit)
+    s['mass'].convert_units('%e Msol'%massunit)
+    s['eps'].convert_units('kpc')
+    s.g['rho'].convert_units('%e Msol kpc^-3'%denunit)
+    
+    s.s['tform'].convert_units('Gyr')    
+    del(s.g['smooth'])
+    s.s['metals'] = s.s['metal']
+    s.g['metals'] = s.g['metal']
+    del(s['metal'])
+    s.g['temp']
+    s.properties['a'] = pynbody.analysis.cosmology.age(s)
+    s[pynbody.filt.Sphere('200 kpc')].write(pynbody.tipsy.TipsySnap,'%s.tipsy'%output[-12:])
+
+
+def make_rgb_image(s,width,xsize=500,ysize=500,filename='test.png') : 
+    from PIL import Image
+    from matplotlib.colors import Normalize
+
+    rgbArray = np.zeros((xsize,ysize,3),'uint8')
+
+    tem = pynbody.plot.image(s,qty='temp',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
+    rho = pynbody.plot.image(s,qty='rho',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
+    met = pynbody.plot.image(s,qty='metal',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,log=False,approximate_fast=False)
+    
+    rgbArray[...,0] = Normalize(vmin=3.5,vmax=6.5,clip=True)(tem)*256
+    rgbArray[...,1] = Normalize()(rho)*256
+    rgbArray[...,2] = Normalize(vmin=-3,vmax=0,clip=True)(np.log10(met/0.02))*256
+
+    img = Image.fromarray(rgbArray)
+
+    img.save(filename)
+    
+    return tem,rho,met
+
+def make_composite_image(s,xsize=500,width='100 kpc',vmin=-1,vmax=6.5) :
+    from PIL import Image
+    from matplotlib.colors import Normalize
+
+    rgbArray = np.zeros((xsize,xsize,3),'uint8')
+
+    bband = pynbody.plot.image(s.s,qty='b_lum_den',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
+    rband = pynbody.plot.image(s.s,qty='r_lum_den',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
+    kband = pynbody.plot.image(s.s,qty='k_lum_den',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
+    
+    norm = Normalize(vmin=vmin,vmax=vmax,clip=True)
+    rgbArray[...,0] = norm(kband)*256
+    rgbArray[...,1] = norm(rband)*256
+    rgbArray[...,2] = norm(bband)*256
+
+    img = Image.fromarray(rgbArray)
+
+    img.show()
+    
+    return bband,rband,kband
+
+@pynbody.ramses.RamsesSnap.derived_quantity
+def temp(self) : 
+    return (self['p']*pynbody.units.m_p/pynbody.units.k/self['rho']).in_units('K')
+
 
 @pynbody.ramses.RamsesSnap.derived_quantity
 def tform(self) : 
@@ -159,14 +249,20 @@ def tform(self) :
 
     top.s['tform'] = -1.0
     done = 0
+
+    if len(top.filename.split('/')) > 1 : 
+        parent_dir = top.filename[:-12]
+    else : 
+        parent_dir = './'
+
     for i in range(ncpu) : 
         try : 
-            f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+            f = open('%s/birth/birth_%s.out%05d'%(parent_dir,top._timestep_id,i+1))
         except IOError : 
             import os
             
-            os.system("cd %s; mkdir birth; /home/itp/roskar/ramses/galaxy_formation/part2birth -inp output_%s; cd .."%(top.filename[:-12],top._timestep_id))
-            f = open('%s/birth/birth_%s.out%05d'%(top.filename[:-12],top._timestep_id,i+1))
+            os.system("cd %s; mkdir birth; /home/itp/roskar/ramses/galaxy_formation/part2birth -inp output_%s; cd .."%(parent_dir,top._timestep_id))
+            f = open('%s/birth/birth_%s.out%05d'%(parent_dir,top._timestep_id,i+1))
 
         n = fread(f,1,'i')
         n /= 8
@@ -178,13 +274,3 @@ def tform(self) :
     top.s['tform'].units = 'Gyr'
 
     return self.s['tform']
-
-
-@pynbody.ramses.RamsesSnap.derived_quantity
-def temp(self) : 
-    return (self['p']*pynbody.units.m_p/pynbody.units.k/self['rho']).in_units('K')
-
-    
-
-    
-    

@@ -284,6 +284,41 @@ def central_vsigma(slist) :
     axs[0].set_title('gas')
     axs[1].set_title('stars')
     
+def central_vsigma_inclined(s,ax=None) : 
+
+    d = pynbody.filt.Sphere(1)
+    if ax is None:
+        f,ax = plt.subplots()
+
+    for angle in [0,20,45,60,89]  : 
+        s.rotate_x(angle)
+        s['absvz'] = np.abs(s['vz'])
+        p = pynbody.analysis.profile.InclinedProfile(s.g,angle,nbins=20,max=.5)
+        ax.plot(p['rbins'],p['absvz']/p['absvz_disp'],label='%s'%angle)
+        s.rotate_x(-angle)
+        del(s['absvz'])
+
+    ax.set_xlabel('$R$ [kpc]')
+    ax.set_ylabel('$V/\sigma$')
+    ax.legend(prop=dict(size=12))
+
+
+def central_properties_figure(times = [5010,5020,5050]):
+
+    f,axs = plt.subplots(len(times),3,figsize=(3*len(times),8))
+
+    for i,time in enumerate(times):
+        s = pynbody.load(smbh.nearest_output(time))
+        center_snapshot(s)
+        s.physical_units()
+        central_vsigma_inclined(s,ax=axs[i,0])
+        s.rotate_x(45)
+        pynbody.plot.image(s.g,width='1000 pc', av_z='rho', qty='temp',subplot=axs[i,1],show_cbar=False,vmin=4,vmax=7)
+        pynbody.plot.image(s.g,width='1000 pc', av_z='rho', qty='vz',log=False,vmin=-350,vmax=350,subplot=axs[i,2],show_cbar=False)
+        s.rotate_x(-45)
+        
+        
+
 def central_velocity_profile(slist) : 
     d = pynbody.filt.Disc(1,.1)
 
