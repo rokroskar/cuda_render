@@ -61,3 +61,11 @@ def get_r200(s,p) :
     den /= pynbody.analysis.cosmology.rho_crit(s,unit=den.units)
 
     return np.interp(200.0,den[::-1],p['rbins'][ind][::-1])
+
+def make_spanned_colorbar(f,axs, label) : 
+    # set the colorbar
+    bb1 = axs[0,-1].get_position()
+    bb2 = axs[1,-1].get_position()
+    cbax = f.add_axes([bb1.x1+.01,bb2.y0,0.02,bb1.y1-bb2.y0])
+    cb1 = f.colorbar(axs[1,-1].get_images()[0],cax=cbax)
+    cb1.set_label(r'%s'%label,fontsize='smaller', fontweight='bold')

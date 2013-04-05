@@ -26,13 +26,25 @@ def make_galaxia_input(sim, run_enbid=False) :
     s.s['mets']+=.1
     
     # shift metallicities and ages around in a random way to avoid identical values
-    s.s['mets'] += np.random.normal(0,0.1,len(s.s))
-    s.s['ages'] = s.s['age'] + np.random.normal(0,0.1,len(s.s))
-
-    print "unique mets = %s and ages = %s"%(len(np.unique(s.s['mets'])), len(np.unique(s.s['ages'])))
+    s.s['mets'] += np.random.normal(0,.001,len(s.s))
+    s.s['ages'] = s.s['age'] + np.random.normal(0,1e-5,len(s.s))
+    
+    try: 
+        assert((len(np.unique(s.s['mets'])) == len(s.s)) & 
+               (len(np.unique(s.s['ages'])) == len(s.s)) & 
+               (len(np.unique(s.s['x'])) == len(s.s)) & 
+               (len(np.unique(s.s['y'])) == len(s.s)) & 
+               (len(np.unique(s.s['z'])) == len(s.s)) & 
+               (len(np.unique(s.s['vx'])) == len(s.s)) & 
+               (len(np.unique(s.s['vy'])) == len(s.s)) & 
+               (len(np.unique(s.s['vz'])) == len(s.s))) 
+           
+    except:
+        print "unique mets = %s and ages = %s"%(len(np.unique(s.s['mets'])), len(np.unique(s.s['ages'])))
+        raise AssertionError("Need unique values")
     # make the pos array
 
-    pos = np.array([s.s['x'],s.s['y'],s.s['z'],s.s['vx'],s.s['vy'],s.s['vz'],s.s['age'],s.s['mets']]).T
+    pos = np.array([s.s['x'],s.s['y'],s.s['z'],s.s['vx'],s.s['vy'],s.s['vz'],s.s['ages'],s.s['mets']]).T
 
     # make the enbid file
     

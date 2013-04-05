@@ -318,6 +318,8 @@ def central_properties_figure(times = [5010,5020,5050]):
         s.rotate_x(-45)
         
         
+    
+        
 
 def central_velocity_profile(slist) : 
     d = pynbody.filt.Disc(1,.1)
@@ -349,23 +351,32 @@ def central_velocity_profile(slist) :
     axs[0].set_title('gas')
     axs[1].set_title('stars')
 
+def temperature_maps(sl) : 
+    f,axs = plt.subplots(2,3,figsize=(10.575, 7.9625))
+    
+    for i, s in enumerate(sl) : 
+        pynbody.plot.image(s.g,width='2 kpc',av_z='rho',qty='temp',vmin=3.5,vmax=7.,subplot=axs[0,i],show_cbar=False)
+        axs[0,i].set_title('t = %.0f'%s.properties['time'].in_units('Myr'))
+        s.rotate_x(90)
+        pynbody.plot.image(s.g,width='2 kpc',av_z='rho',qty='temp',vmin=3.5,vmax=7.,subplot=axs[1,i],show_cbar=False)
+        s.rotate_x(-90)
+        
+    map(utils.clear_labels,axs.flatten()[1:])
+    utils.make_spanned_colorbar(f,axs,'$T$ [K]')
 
-def vsigma_vs_time(dir, times = [5003.1, 5004, 5005]) : 
-    flist = smbh.nearest_output(times,dir)
-
+    
+def vsigma_vs_time(sl) : 
     fig, ax = plt.subplots()
 
-    for f,t in zip(flist,times) : 
-        s = pynbody.load(f)
-        pynbody.analysis.halo.center(s,mode='hyb',verbose=True,min_particles = 100000)
+    for s in sl : 
         s.g['speed'] = np.sqrt(s.g['v2'])
         ind = np.where(s.g['rho'].in_units('m_p cm^-3') < 1e6)[0]
         p = pynbody.analysis.profile.Profile(s.g[ind],max = 1, min = .002, type = 'log', nbins=20)
-        ax.plot(p['rbins'].in_units('pc'), p['speed']/p['speed_disp'], label = 't=%.2f Myr'%t)
+        ax.plot(p['rbins'].in_units('pc'), p['speed']/p['speed_disp'], label = 't=%.0f Myr'%s.properties['time'].in_units('Myr'))
 
     ax.set_xlabel('$R$ [pc]')
     ax.set_ylabel(r'$v/\sigma$')
-    ax.legend()
+    ax.legend(prop=dict(size=12))
     ax.semilogx()
 
  
