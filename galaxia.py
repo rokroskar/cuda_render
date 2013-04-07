@@ -211,7 +211,6 @@ def compare_smoothing_volumes(sms,s) :
 def compare_plists(sms, s, l=0,b=90,mmin=0,mmax=10) : 
     plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}_plist'.format(l,b,mmin,mmax)
     f, axs = plt.subplots(2,3,figsize=(17.5,7.2))
-#    f, axs = plt.subplots()
 
     for i,d in enumerate(dims):
         ps = '{0}/{1}'.format(d,plist_name)
@@ -245,7 +244,7 @@ def compare_plists(sms, s, l=0,b=90,mmin=0,mmax=10) :
         ax.plot((-10,10),(0,0),'r--')
 def compare_stars(l=0,b=90,mmin=0,mmax=10) :
     plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}.ebf'.format(l,b,mmin,mmax)
-    f, axs = plt.subplots(2,3,figsize=(17.5,7.2))
+    f, axs = plt.subplots(1,3,figsize=(17.5,7.2))
 #    f, axs = plt.subplots()
 
     for i,d in enumerate(dims):
@@ -280,8 +279,17 @@ def compare_stars(l=0,b=90,mmin=0,mmax=10) :
         plt.setp(ax.get_yticklabels(), fontsize=12)
 #        ax.plot((-10,10),(0,0),'r--')
 
+
+def compare_stellar_distributions(l=0,b=90,mmin=0,mmax=10) :
+    plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}_plist'.format(l,b,mmin,mmax)
+    f, axs = plt.subplots(1,3,figsize=(17.5,4))
+
+    for i,d in enumerate(dims):
+        ps = '{0}/{1}'.format(d,plist_name)
+        inds = np.array(np.genfromtxt(ps),dtype='int')
         
-        
+
+
 def savefig(name):
     plt.savefig('plots/%s.pdf'%name,format='pdf',bbox_inches='tight')
     plt.savefig('plots/%s.eps'%name,format='eps',bbox_inches='tight')
