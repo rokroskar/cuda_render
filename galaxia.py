@@ -3,6 +3,13 @@ import pynbody
 import os
 import numpy as np
 import matplotlib.pylab as plt
+from scipy.stats import gaussian_kde as kde
+
+galdir = '/home/itp/roskar/nbody/GalaxiaData'
+galbin = '/home/itp/roskar/bin/galaxia'
+galinput = '{0}/nbody1/mw/mw1.ebf'.format(galdir)
+dims = ['d3','d6','d8']
+names = ['3D','6D','8D']
 
 def make_galaxia_input(sim, run_enbid=False) :
 
@@ -19,7 +26,7 @@ def make_galaxia_input(sim, run_enbid=False) :
     # set low metalicities to some reasonable value
 
     s.s['mets'] = s.s['feh']
-    s.s['alpha'] = 0.0
+    s.s['alpha'] = s.s['ofe']
     bad = np.where(s.s['feh'] < -5)[0]
     s.s[bad]['mets'] = -5.0
 
@@ -28,7 +35,7 @@ def make_galaxia_input(sim, run_enbid=False) :
     # shift metallicities and ages around in a random way to avoid identical values
     s.s['mets'] += np.random.normal(0,.001,len(s.s))
     s.s['ages'] = s.s['age'] + np.random.normal(0,1e-5,len(s.s))
-    
+    s.s['alpha'] += np.random.normal(0,.001,len(s.s))
     try: 
         assert((len(np.unique(s.s['mets'])) == len(s.s)) & 
                (len(np.unique(s.s['ages'])) == len(s.s)) & 
@@ -68,17 +75,51 @@ def make_galaxia_input(sim, run_enbid=False) :
 
         # run enbid
 
-#        os.system('~/bin/enbid -dmc --dim=3 --ngb=64 --dsuffix=_d3n64 %s_galaxia.ebf'%filename)
-        os.system('~/bin/enbid -dmc --dim=6 --ngb=64 --dsuffix=_d6n64 %s_galaxia.ebf'%filename)
-#        os.system('~/bin/enbid -dm --gmetric=1 --dim=8 --ngb=64 --dsuffix=_d8n64 %s_galaxia.ebf'%filename)
+        os.system('~/bin/enbid -dmcl --dim=3 --ngb=64 --dsuffix=_d3n64_c %s_galaxia.ebf'%filename)
+        os.system('~/bin/enbid -dmsl --dim=3 --ngb=64 --dsuffix=_d3n64_s %s_galaxia.ebf'%filename)
+        os.system('~/bin/enbid -dmcl --dim=6 --ngb=64 --dsuffix=_d6n64_c %s_galaxia.ebf'%filename)
+        os.system('~/bin/enbid -dmsl --dim=6 --ngb=64 --dsuffix=_d6n64_s %s_galaxia.ebf'%filename)
+        os.system('~/bin/enbid -dmsl --dim=8 --ngb=64 --dsuffix=_d8n64_s %s_galaxia.ebf'%filename)
 
 
-
-
+def run_galaxia(ndim=3,l=0,b=90,mmin=0,mmax=10,geom=1,area=1000,frac=1.0,rmax=1000,photoerror=0) :
     
+    
+    # make the parameter file
+    
+    f = open('{0}/paramfiles/galrunparam'.format(galdir),'w')
+    
+    f.write('outputFile           gal_nbody_l{0}_b{1}_{2}_{3}\n'.format(l,b,mmin,mmax))
+    f.write('outputDir            {0}/d{1}\n'.format(galdir,ndim))
+    f.write('photoSys             UBV\n')
+    f.write('magcolorNames        V,B-V\n')
+    f.write('appMagLimits[0]      {0}\n'.format(mmin))
+    f.write('appMagLimits[1]      {0}\n'.format(mmax))
+    f.write('absMagLimits[0]      -1000\n')
+    f.write('absMagLimits[1]      1000\n')
+    f.write('colorLimits[0]       -1000\n')
+    f.write('colorLimits[1]       1000\n')
+    f.write('geometryOption       {0}\n'.format(geom))
+    f.write('longitude            {0}\n'.format(l))
+    f.write('latitude             {0}\n'.format(b))
+    f.write('surveyArea           {0}\n'.format(area))
+    f.write('fSample              {0}\n'.format(frac))
+    f.write('popID                -1\n')
+    f.write('warpFlareOn           1\n')
+    f.write('seed                  12\n')
+    f.write('r_max                 {0}\n'.format(rmax))
+    f.write('starType              0\n')
+    f.write('photoError            {0}\n'.format(photoerror))
+
+    f.close()
+    
+    # run the code
+    import os
+
+    os.system('{0} -r --nfile={1} --hdim={2} {3}/paramfiles/galrunparam'.format(galbin,galinput,ndim,galdir))
+
 
 def compare_run_to_model(sim_gal, mod_gal) : 
-    from scipy.stats import gaussian_kde as kde
 
     sim = ebf.read(sim_gal)
     mod = ebf.read(mod_gal)
@@ -121,4 +162,127 @@ def compare_run_to_model(sim_gal, mod_gal) :
         axs[i].set_ylabel('$V$')
         axs[i].set_xlabel('$B - V$')
         axs[i].set_title(labels[i])
+    
+
+
+def load_smoothing_data(flist=None):
+    if flist is None: 
+        flist = ['nbody1/mw/mw1_d3n64_s_den.ebf',
+                 'nbody1/mw/mw1_d6n64_s_den.ebf',
+                 'nbody1/mw/mw1_d8n64_s_den.ebf']
+    return map(ebf.read,flist)
+
+def load_stellar_data(l='0',b='90',mmin='0',mmax='10'):
+    flist = ['d3/galaxy1_nbody_l%s_b%s_%s_%s.ebf'%(l,b,mmin,mmax),
+             'd6/galaxy1_nbody_l%s_b%s_%s_%s.ebf'%(l,b,mmin,mmax),
+             'd8/galaxy1_nbody_l%s_b%s_%s_%s.ebf'%(l,b,mmin,mmax)]
+    
+    return map(ebf.read,flist)
+
+def compare_smoothing_volumes(sms,s) : 
+    names = ['3D','6D','8D']
+    colors = ['blue','green','red']
+
+    f,ax = plt.subplots()
+    snfilt = pynbody.filt.SolarNeighborhood(7,9,1.0)
+    
+    ind = snfilt.where(s.s)[0]
+
+    for sm, name,color in zip(sms,names,colors) : 
+        vol = (sm['h_smooth'][:,0:3]).prod(axis=1)
+        volsn = (sm['h_smooth'][ind,0:3]).prod(axis=1)
+        #kd_full = kde(vol)
+        #kd_sn = kde(volsn)
+        #xs = np.logspace(-8,2,1000)
+        htot,binstot = np.histogram(np.log10(vol),100,normed=True)
+        hsn,binssn = np.histogram(np.log10(volsn),100,normed=True)
+
+        binstot = .5*(binstot[:-1]+binstot[1:])
+        binssn = .5*(binssn[:-1]+binssn[1:])
+                
+        ax.plot(binstot,htot,color=color,label=name)
+        ax.plot(binssn,hsn,color=color,linestyle='--')
+        
+
+    plt.legend(prop=dict(size=12))
+    plt.xlabel('log(smoothing volume [kpc$^{-3}$])')
+    
+        
+def compare_plists(sms, s, l=0,b=90,mmin=0,mmax=10) : 
+    plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}_plist'.format(l,b,mmin,mmax)
+    f, axs = plt.subplots(2,3,figsize=(17.5,7.2))
+#    f, axs = plt.subplots()
+
+    for i,d in enumerate(dims):
+        ps = '{0}/{1}'.format(d,plist_name)
+        inds = np.array(np.genfromtxt(ps),dtype='int')
+        axs[0,i].plot(s.s[inds]['y'][::2],s.s[inds]['x'][::2], ',')
+        axs[0,i].plot(0,-8,'yo')
+        axs[1,i].plot(s.s[inds]['y'][::2],s.s[inds]['z'][::2], ',')
+        axs[1,i].plot(0,.015,'yo')
+        axs[0,i].set_title(names[i])
+        
+    for ax in axs[0,:]:
+        ax.set_ylim(-10,-4)
+        ax.set_xlim(-5,5)
+        #ax.set_aspect(1)
+        ax.set_xlabel('$x$',fontsize=12)
+        ax.set_ylabel('$y$',fontsize=12)
+        plt.setp(ax.get_xticklabels(), fontsize=12)
+        plt.setp(ax.get_yticklabels(), fontsize=12)
+        for r in [2,4,6,8,10] : 
+            circ = plt.Circle((0,0),radius=r,edgecolor='red',facecolor='none',linestyle='dashed')
+            ax.add_patch(circ)
+
+    for ax in axs[1,:]:
+        ax.set_ylim(-2,.5)
+        ax.set_xlim(-2,2)
+        ax.set_aspect(1)
+        ax.set_xlabel('$x$',fontsize=12)
+        ax.set_ylabel('$z$',fontsize=12)
+        plt.setp(ax.get_xticklabels(), fontsize=12)
+        plt.setp(ax.get_yticklabels(), fontsize=12)
+        ax.plot((-10,10),(0,0),'r--')
+def compare_stars(l=0,b=90,mmin=0,mmax=10) :
+    plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}.ebf'.format(l,b,mmin,mmax)
+    f, axs = plt.subplots(2,3,figsize=(17.5,7.2))
+#    f, axs = plt.subplots()
+
+    for i,d in enumerate(dims):
+        gal = ebf.read('{0}/{1}'.format(d,plist_name))
+        axs[0,i].plot(gal['py'][::10],gal['px'][::10], ',')
+        axs[0,i].plot(0,0,'yo')
+        axs[1,i].plot(gal['py'][::10],gal['pz'][::10], ',')
+        axs[1,i].plot(0,0,'yo')
+        axs[0,i].set_title(names[i])
+        print 'total mass = %e'%gal['smass'].sum()
+
+
+    for ax in axs[0,:]:
+        ax.set_ylim(-.6,.6)
+        ax.set_xlim(-.6,.6)
+        #ax.set_aspect(1)
+        ax.set_xlabel('$x$',fontsize=12)
+        ax.set_ylabel('$y$',fontsize=12)
+        plt.setp(ax.get_xticklabels(), fontsize=12)
+        plt.setp(ax.get_yticklabels(), fontsize=12)
+        for r in [2,4,6,8,10] : 
+            circ = plt.Circle((0,0),radius=r,edgecolor='red',facecolor='none',linestyle='dashed')
+            ax.add_patch(circ)
+
+    for ax in axs[1,:]:
+        ax.set_ylim(-.1,2.0)
+        ax.set_xlim(-.6,.6)
+        
+        ax.set_xlabel('$x$',fontsize=12)
+        ax.set_ylabel('$z$',fontsize=12)
+        plt.setp(ax.get_xticklabels(), fontsize=12)
+        plt.setp(ax.get_yticklabels(), fontsize=12)
+#        ax.plot((-10,10),(0,0),'r--')
+
+        
+        
+def savefig(name):
+    plt.savefig('plots/%s.pdf'%name,format='pdf',bbox_inches='tight')
+    plt.savefig('plots/%s.eps'%name,format='eps',bbox_inches='tight')
     
