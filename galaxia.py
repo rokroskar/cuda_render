@@ -4,9 +4,11 @@ import os
 import numpy as np
 import matplotlib.pylab as plt
 from scipy.stats import gaussian_kde as kde
+import utils 
 
-galdir = '/home/itp/roskar/nbody/GalaxiaData'
-galbin = '/home/itp/roskar/bin/galaxia'
+home = os.environ['HOME']
+galdir = '%s/GalaxiaData'%home
+galbin = '%s/bin/galaxia'%home
 galinput = '{0}/nbody1/mw/mw1.ebf'.format(galdir)
 dims = ['d3','d6','d8']
 names = ['3D','6D','8D']
@@ -127,9 +129,14 @@ def compare_run_to_model(sim_gal, mod_gal) :
     # two columns -- simulation on left, galaxia model on right
 
     hists = ['ubv_v','age','feh','rad']
-    ranges = [[-6,10],[6,10.5],[-2,.5],[0,2]]
+    ranges = [[-2,15],[0,10],[-2,.5],[0,2]]
     labels = ['sim','model']
 
+    sim['age'] = 10**sim['age']/1e9
+    mod['age'] = 10**mod['age']/1e9
+    for band in ['u','b','v','k','j'] :
+        sim['app_%s'%band] = sim['ubv_%s'%band]+5*np.log10(100*sim['rad']) #+ sim['exbv_schlegel']
+        mod['app_%s'%band] = mod['ubv_%s'%band]+5*np.log10(100*mod['rad']) #+ mod['exbv_schlegel']
     f, axs = plt.subplots(len(hists),1,figsize=(7,len(hists)*2.5))
         
     # histograms
@@ -137,18 +144,23 @@ def compare_run_to_model(sim_gal, mod_gal) :
     for i,h in enumerate(hists) : 
         for j,x in enumerate([sim,mod]) :
             ax = axs[i]
-            ax.hist(x[h],bins=50,normed=True,histtype='step',range=ranges[i],label=labels[j])
-#            k = kde(x[h])
+            #if i == 1 : 
+            #    ax.hist(x['ubv_b']-x['ubv_v'],histtype='step',normed=True,range=[-.5,2],bins=50)
+            #else : 
+            ax.hist(x[h],bins=50,normed=True,histtype='step',range=ranges[i],label=labels[j],weights=x['smass'])
+#            k = kde(x[h][np.where((x[h]>ranges[i][0]) & (x[h]<ranges[i][1]))[0]])
 #            xs = np.linspace(ranges[i][0],ranges[i][1],200)
 #            ax.plot(xs,k(xs),label=labels[j])
-            ax.set_xlabel(r'%s'%h)
+            ax.set_xlabel(r'%s'%h.replace('_','-'))
     
 
-    axs[1].set_ylim(0,2.0)
+#    axs[1].set_ylim(0,)
     plt.subplots_adjust(hspace=.5)
     axs[0].legend(prop=dict(size=10))
-
-
+    axs[0].set_xlabel('M$_V$')
+    axs[1].set_xlabel('Age [Gyr]')
+    axs[2].set_xlabel('[Fe/H]')
+    axs[3].set_xlabel('$d$ [kpc]')
     # CMDs
 
     f, axs = plt.subplots(1,2,figsize=(13,6))
@@ -215,44 +227,49 @@ def compare_plists(sms, s, l=0,b=90,mmin=0,mmax=10) :
     for i,d in enumerate(dims):
         ps = '{0}/{1}'.format(d,plist_name)
         inds = np.array(np.genfromtxt(ps),dtype='int')
-        axs[0,i].plot(s.s[inds]['y'][::2],s.s[inds]['x'][::2], ',')
-        axs[0,i].plot(0,-8,'yo')
-        axs[1,i].plot(s.s[inds]['y'][::2],s.s[inds]['z'][::2], ',')
-        axs[1,i].plot(0,.015,'yo')
+        axs[0,i].plot(s.s[inds]['y'][::2],s.s[inds]['x'][::2], 'k,')#, alpha=.5)
+        axs[0,i].plot(0,-8,'yo',markersize=10)
+        axs[1,i].plot(s.s[inds]['y'][::2],s.s[inds]['z'][::2], 'k,')#, alpha=.5)
         axs[0,i].set_title(names[i])
         
     for ax in axs[0,:]:
         ax.set_ylim(-10,-4)
         ax.set_xlim(-5,5)
         #ax.set_aspect(1)
-        ax.set_xlabel('$x$',fontsize=12)
-        ax.set_ylabel('$y$',fontsize=12)
-        plt.setp(ax.get_xticklabels(), fontsize=12)
-        plt.setp(ax.get_yticklabels(), fontsize=12)
+        ax.set_xlabel('$x$ [kpc]',fontsize=14)
+        ax.set_ylabel('$y$ [kpc]',fontsize=14)
+        plt.setp(ax.get_xticklabels(), fontsize=14)
+        plt.setp(ax.get_yticklabels(), fontsize=14)
         for r in [2,4,6,8,10] : 
-            circ = plt.Circle((0,0),radius=r,edgecolor='red',facecolor='none',linestyle='dashed')
+            circ = plt.Circle((0,0),radius=r,edgecolor='red',facecolor='none',linestyle='dashed',linewidth=2.0)
             ax.add_patch(circ)
 
     for ax in axs[1,:]:
         ax.set_ylim(-2,.5)
         ax.set_xlim(-2,2)
         ax.set_aspect(1)
-        ax.set_xlabel('$x$',fontsize=12)
-        ax.set_ylabel('$z$',fontsize=12)
-        plt.setp(ax.get_xticklabels(), fontsize=12)
-        plt.setp(ax.get_yticklabels(), fontsize=12)
-        ax.plot((-10,10),(0,0),'r--')
+        ax.set_xlabel('$x$ [kpc]',fontsize=14)
+        ax.set_ylabel('$z$ [kpc]',fontsize=14)
+        plt.setp(ax.get_xticklabels(), fontsize=14)
+        plt.setp(ax.get_yticklabels(), fontsize=14)
+        ax.plot((-10,10),(0,0),'r--',linewidth=2)
+        ax.plot(0,.015,'yo',markersize=10)
+
 def compare_stars(l=0,b=90,mmin=0,mmax=10) :
     plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}.ebf'.format(l,b,mmin,mmax)
-    f, axs = plt.subplots(1,3,figsize=(17.5,7.2))
+    f, axs = plt.subplots(2,3,figsize=(17.5,7.2))
 #    f, axs = plt.subplots()
 
     for i,d in enumerate(dims):
         gal = ebf.read('{0}/{1}'.format(d,plist_name))
-        axs[0,i].plot(gal['py'][::10],gal['px'][::10], ',')
-        axs[0,i].plot(0,0,'yo')
-        axs[1,i].plot(gal['py'][::10],gal['pz'][::10], ',')
-        axs[1,i].plot(0,0,'yo')
+        if i == 0:
+            fact = 10
+        else : 
+            fact = 1
+        axs[0,i].plot(gal['py'][::10*fact],gal['px'][::10*fact], 'k,',alpha=.2)
+        axs[0,i].plot(0,0,'yo',markersize=10)
+        axs[1,i].plot(gal['py'][::10*fact],gal['pz'][::10*fact], 'k,',alpha=.2)
+        axs[1,i].plot(0,0,'yo',markersize=10)
         axs[0,i].set_title(names[i])
         print 'total mass = %e'%gal['smass'].sum()
 
@@ -261,33 +278,106 @@ def compare_stars(l=0,b=90,mmin=0,mmax=10) :
         ax.set_ylim(-.6,.6)
         ax.set_xlim(-.6,.6)
         #ax.set_aspect(1)
-        ax.set_xlabel('$x$',fontsize=12)
-        ax.set_ylabel('$y$',fontsize=12)
-        plt.setp(ax.get_xticklabels(), fontsize=12)
-        plt.setp(ax.get_yticklabels(), fontsize=12)
+        ax.set_xlabel('$x$ [kpc]',fontsize=14)
+        ax.set_ylabel('$y$ [kpc]',fontsize=14)
+        plt.setp(ax.get_xticklabels(), fontsize=14)
+        plt.setp(ax.get_yticklabels(), fontsize=14)
         for r in [2,4,6,8,10] : 
             circ = plt.Circle((0,0),radius=r,edgecolor='red',facecolor='none',linestyle='dashed')
             ax.add_patch(circ)
 
     for ax in axs[1,:]:
-        ax.set_ylim(-.1,2.0)
+        ax.set_ylim(-2.,.1)
         ax.set_xlim(-.6,.6)
         
-        ax.set_xlabel('$x$',fontsize=12)
-        ax.set_ylabel('$z$',fontsize=12)
-        plt.setp(ax.get_xticklabels(), fontsize=12)
-        plt.setp(ax.get_yticklabels(), fontsize=12)
+        ax.set_xlabel('$x$ [kpc]',fontsize=14)
+        ax.set_ylabel('$z$ [kpc]',fontsize=14)
+        plt.setp(ax.get_xticklabels(), fontsize=14)
+        plt.setp(ax.get_yticklabels(), fontsize=14)
 #        ax.plot((-10,10),(0,0),'r--')
 
 
 def compare_stellar_distributions(l=0,b=90,mmin=0,mmax=10) :
-    plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}_plist'.format(l,b,mmin,mmax)
+    plist_name = 'gal_nbody_l{0}_b{1}_{2}_{3}.ebf'.format(l,b,mmin,mmax)
     f, axs = plt.subplots(1,3,figsize=(17.5,4))
 
     for i,d in enumerate(dims):
-        ps = '{0}/{1}'.format(d,plist_name)
-        inds = np.array(np.genfromtxt(ps),dtype='int')
+        gal = ebf.read('{0}/{1}'.format(d,plist_name))
+        gal['linage'] = 10**gal['age']/1e9
+        for ax, prop, range in zip(axs.flatten(),
+                                   ['feh','linage','rad'], 
+                                   ([-1,.5],[1,10],[0,2.0])):
+            ax.hist(gal[prop],weights=gal['smass'],histtype='step',label=names[i], bins = 20, range=range,  normed=True)
+            
+            #kd = kde(gal[prop])
+            #x = np.linspace(range[0],range[1],100)
+            #ax.plot(x,kd(x),label=names[i])
+        print 'total mass = %e'%gal['smass'].sum()
         
+    axs[0].legend()
+    axs[0].set_xlabel('[Fe/H]')
+    axs[1].set_ylim(0,.2)
+    axs[1].set_xlabel('log(Age [Gyr])')
+    axs[2].set_xlabel('$r$ [kpc]')
+    axs[0].annotate('$l={0}$, $b={1}$'.format(l,b),(.05,.9),textcoords='axes fraction')
+
+
+def make_df_example(): 
+    x=np.random.multivariate_normal([0,0],[[4,0],[0,1]],50)
+    xx,yy = np.meshgrid(np.arange(-6,6,.1),np.arange(-6,6,.1))
+    zz = np.exp(-xx**2/4-yy**2)
+    f,ax=plt.subplots()
+    ax.imshow(np.log10(zz),extent=(-6,6,-6,6),cmap=plt.cm.gist_heat,aspect=0.7538461538461538)
+    ax.set_frame_on(False)
+    utils.clear_labels(ax,True)    
+    plt.savefig('smooth_df.pdf',format='pdf',bbox_inches='tight',transparent=True)
+    
+    ax.plot(x[:,0],x[:,1],'wo')
+    ax.set_xlim(-6,6)
+    ax.set_ylim(-6,6)
+    ax.set_frame_on(False)
+    utils.clear_labels(ax,True)
+    plt.savefig('sampled_df.pdf',format='pdf',bbox_inches='tight',transparent=True)
+    
+    f,ax=plt.subplots()
+    ax.plot(x[:,0],x[:,1],'wo')
+    ax.set_xlim(-6,6)
+    ax.set_ylim(-6,6)
+    ax.set_frame_on(False)
+    utils.clear_labels(ax,True)
+    plt.savefig('sample_points.pdf',format='pdf',bbox_inches='tight',transparent=True)
+    
+    xs = np.arange(-1,1,.01)
+    ys = np.arange(-1,1,.01)
+    xx,yy=np.meshgrid(xs,ys)
+    zz = np.exp(-xx**2/.16-yy**2/.04)
+    for point in x : 
+        plt.contour(xs+point[0],ys+point[1],zz,3,colors='k')
+    ax.set_frame_on(False)
+    utils.clear_labels(ax,True)
+    plt.savefig('kde_points.pdf',format='pdf',bbox_inches='tight',transparent=True)
+
+    f,ax=plt.subplots()
+    xs = np.arange(-6,6,.1)
+    ys = np.arange(-6,6,.1)
+    kd = pynbody.plot.util.fast_kde(x[:,0],x[:,1],gridsize=(len(xs),len(ys)),extents=[-6,6,-6,6])
+    plt.contourf(xs,ys,kd,np.linspace(1e-3,kd.max(),5),cmap=plt.cm.Greys)
+    ax.set_frame_on(False)
+    utils.clear_labels(ax,True)
+    plt.savefig('kde.pdf',format='pdf',bbox_inches='tight',transparent=True)
+    
+
+    #x=np.random.multivariate_normal([0,0],[[4,0],[0,1]],5000)
+    x = kde(x.T).resample(1000).T
+    f,ax=plt.subplots()
+    ax.plot(x[:,0],x[:,1],'ko', alpha=.3)
+    ax.set_xlim(-6,6)
+    ax.set_ylim(-6,6)
+    ax.set_frame_on(False)
+    utils.clear_labels(ax,True)
+    plt.savefig('resample_points.pdf',format='pdf',bbox_inches='tight',alpha=.2,transparent=True)
+
+    
 
 
 def savefig(name):

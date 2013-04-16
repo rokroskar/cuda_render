@@ -21,11 +21,14 @@ def make_tile_figure(nrow,ncol,func,*args,**kwargs) :
 
             if (i < nrow-1) | (j > 0): clear_labels(ax)            
                 
-def clear_labels(ax):
+def clear_labels(ax,ticklines=False):
     ax.set_xticklabels('')
     ax.set_yticklabels('')
     ax.set_ylabel('')
     ax.set_xlabel('')
+    if ticklines:
+        for line in ax.get_xticklines() + ax.get_yticklines():
+            line.set_markersize(0)
 
 
 def shrink_sphere(sim, r=None, shrink_factor = 0.7, min_particles = 100, verbose = False) : 
