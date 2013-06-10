@@ -77,7 +77,7 @@ import numpy as np
 import ramses_pynbody as ram
 import isolated as iso
 import matplotlib.pylab as plt
-
+from matplotlib.colors import Normalize, LogNorm
 
 non_rad = ['std',
            'nof',
@@ -110,41 +110,68 @@ names_all = names_non_rad + names_fixed_kappa + names_var_kappa
 
 list_all = non_rad + rad_fixed_kappa + rad_var_kappa
 
-paper_runs = ['nof','std','rad_kappa5','rad_kappa10','rad3','rad_imf3']
+paper_runs = ['nof','std','sf_0p1','kap5','kap30','kap50']
 
 paper_names = ['no feedback',
-               '$\kappa = 0$',
+               'SN only',
+               'var. $\kappa$',
                '$\kappa = 5$',
-               '$\kappa = 10$',
-               '$\kappa = 50$',
-               'var. $\kappa$']
+               '$\kappa = 30$',
+               '$\kappa = 50$']
 
+def get_color(i,n,cmap=plt.cm.gist_ncar) : 
+    return cmap(int(i*256./n))
 
+paper_linewidths = [1.5,1,1,1,1,1.5]
+paper_colors = [get_color(i,len(paper_runs)) for i in range(len(paper_runs))]
 
+kappa_runs  = ['kap1','kap5','kap10','kap15','kap20', 'kap25','kap30','kap40','kap50','kap100']
+kappas = np.array([1,5,10,15,20,25,30,40,50,100])
+kappa_names = [r'$\kappa = %s$'%(kap[3:]) for kap in kappa_runs]
+
+kappa_colors = plt.cm.Greys(Normalize(vmin=-10,vmax=60)(kappas))
 
 def load_outputs(flist=list_all, outnum = 101, align = True): 
     return map(lambda s: ram.load_center(s+'/output_%05d'%outnum,align), flist)
+
+def load_tipsy_outputs(flist=list_all, outnum = 101, align = True): 
+    sl = []
+    hs = []
+    for run in flist:
+        s = pynbody.load('%s/output_%05d_fullbox.tipsy'%(run,outnum))
+        h = s.halos(make_grp=True)
+        pynbody.analysis.halo.center(h[1],mode='ssc')
+        sl.append(s)
+        hs.append(h)
+        if align: 
+            pynbody.analysis.angmom.faceon(h[1].s,mode='ssc',disk_size='10 kpc')
+
+    return sl, hs
     
 
-def make_profile_comparisons(slist, names, load_profile = False, write_profile = False):
+def make_profile_comparisons(slist, names, load_profile = False, write_profile = False, linewidths = None):
     f,axs = plt.subplots(1,4,figsize=(18.5,4))
     
     axs = axs.flatten()
 
-    disk = pynbody.filt.Disc(30,1)
+    disk = pynbody.filt.Disc(30,30)
+
+    if linewidths is None: linewidths = np.ones(len(slist))
 
     for i,s in enumerate(slist) : 
-        p = pynbody.analysis.profile.Profile(s,min=0.4,max=30,nbins=20, type = 'log', load_from_file=load_profile)
-        ps = pynbody.analysis.profile.Profile(s.s[disk],min=0,max=30,nbins=20,load_from_file=load_profile)
-        pg = pynbody.analysis.profile.Profile(s.g[disk],min=0,max=30,nbins=20,load_from_file=load_profile)
+        p = pynbody.analysis.profile.Profile(s,min='0.4 kpc',max='30 kpc',nbins=50, type = 'log', load_from_file=load_profile)
+        ps = pynbody.analysis.profile.Profile(s.s,min='0 kpc',max='30 kpc',nbins=100,load_from_file=load_profile)
+        pg = pynbody.analysis.profile.Profile(s.g[disk],min='0 kpc',max='30 kpc',nbins=100,load_from_file=load_profile)
 
         color = get_color(i,len(slist))
 
-        axs[0].plot(ps['rbins'],ps['density'].in_units('Msol kpc^-2'),color=color,label=names[i])
-        axs[1].plot(pg['rbins'],pg['density'].in_units('Msol kpc^-2'),color=color)
-        axs[2].plot(ps['rbins'],ps['vr_disp'].in_units('km s^-1'), color = color)
-        axs[2].plot(ps['rbins'],ps['vz_disp'].in_units('km s^-1'), color = color,linestyle='--')
-        axs[3].plot(p['rbins'],p['v_circ'].in_units('km s^-1'), color = color)
+        axs[0].plot(ps['rbins'].in_units('kpc'),ps['density'].in_units('Msol kpc^-2'),color=color,label=names[i],
+                    linewidth=linewidths[i])
+        axs[1].plot(pg['rbins'].in_units('kpc'),pg['density'].in_units('Msol kpc^-2'),color=color,linewidth=linewidths[i])
+        axs[2].plot(ps['rbins'].in_units('kpc'),ps['vr_disp'].in_units('km s^-1'), color = color, linewidth=linewidths[i])
+        axs[2].plot(ps['rbins'].in_units('kpc'),ps['vz_disp'].in_units('km s^-1'), color = color,linestyle='--',
+                    linewidth=linewidths[i])
+        axs[3].plot(p['rbins'].in_units('kpc'),p['v_circ'].in_units('km s^-1'), color = color,linewidth=linewidths[i])
         
         if write_profile: 
             p.write()
@@ -239,27 +266,33 @@ def make_comparison_grid(slist, names, load_profile = False, write_profile = Fal
     axs[3,0].set_ylabel('$v_{circ}$ [km/s]')
 
     plt.subplots_adjust(hspace=.05,wspace=.05)
-def get_color(i,n,cmap=plt.cm.gist_ncar) : 
-    return cmap(int(i*256./n))
 
-def make_j_jmax_single(slist,titles) : 
+
+
+def make_j_jmax_single(slist,titles,linewidths=None) : 
     f, ax = plt.subplots()
 
     sph = pynbody.filt.Sphere('50 kpc')
 
+    if linewidths is None:
+        linewidths=np.ones(len(slist))
+
     for i,s in enumerate(slist) : 
-        ax.hist(s.s[sph]['jz']/s.s[sph]['jzmaxr'],
-                range=[-3,3],color=get_color(i,len(slist)),histtype='step',
-                bins=100, normed = True, label = titles[i])
+        ax.hist(s.s[sph]['jz']/s.s[sph]['jzmaxe'],
+                range=[-2,2],color=get_color(i,len(slist)),histtype='step',
+                bins=100, normed = True, label = titles[i],linewidth=linewidths[i])
     
     ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
-    ax.set_xlabel('$j_z/j_c(R)$')
+    ax.set_xlabel('$j_z/j_c(E)$')
 
     
-def make_j_jmax_plot(slist,titles) : 
+def make_j_jmax_plot(slist,titles,linewidths=None) : 
     f,axs = plt.subplots(3,1,figsize=(8,10))
 
     sph = pynbody.filt.Sphere('50 kpc')
+
+    if linewidths is None:
+        linewidths=np.ones(len(slist))
 
     for i,s in enumerate(slist) : 
         if i < len(non_rad) : ind = 0
@@ -267,7 +300,7 @@ def make_j_jmax_plot(slist,titles) :
         else: ind = 2
         axs.flatten()[ind].hist(s.s[sph]['jz']/s.s[sph]['jzmaxr'],
                                 range=[-3,3],color=get_color(i,len(slist)),histtype='step',
-                                bins=100, normed = True, label = titles[i])
+                                bins=100, normed = True, label = titles[i],linewidth=linewidths[i])
     
     for ax in axs : ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
     for ax in axs.flatten()[:2]: ax.set_xticklabels('')
@@ -290,11 +323,11 @@ def make_image_figure(slist, names) :
         sph = s[pynbody.filt.Sphere('100 kpc')]
 
         pynbody.plot.image(sph.g, width=60, qty='rho',av_z='rho',subplot=axs[i*2],cmap=plt.cm.Greys_r,
-                           show_cbar=False, approximate_fast=False, vmin=2.5,vmax=9,threaded=10)
+                           show_cbar=False, approximate_fast=False, vmin=4,vmax=10,threaded=10,denoise=True)
         s.rotate_x(90)
 
         pynbody.plot.image(sph.g, width=60, qty='rho',av_z='rho',subplot=axs[i*2+1],cmap=plt.cm.Greys_r,
-                           show_cbar=False, approximate_fast=False,vmin=2.5,vmax=9,threaded=10)
+                           show_cbar=False, approximate_fast=False,vmin=4,vmax=10,threaded=10,denoise=True)
         axs[i*2].annotate(names[i],(0.1,.87),xycoords='axes fraction', color = 'white')
         s.rotate_x(-90)
 
@@ -324,10 +357,12 @@ def make_image_figure(slist, names) :
     
     plt.ion()
 
-def make_sfh_figure_singlepanel(slist,names) : 
+def make_sfh_figure_singlepanel(slist,names,linewidths=None) : 
     from scipy.interpolate import interp1d
 
     f,ax = plt.subplots()
+
+    if linewidths is None: linewidths=np.ones(len(slist))
 
     sph = pynbody.filt.Sphere('20 kpc')
 
@@ -364,7 +399,7 @@ def make_sfh_figure_singlepanel(slist,names) :
         #if i == 0: 
         #    ax.plot(bins,sfh/1e9,'--r', label=names[i])
         #else:
-        ax.plot(bins,sfh/1e9,color = get_color(i,len(slist)), label=names[i])
+        ax.plot(bins,sfh/1e9,color = get_color(i,len(slist)), label=names[i], linewidth=linewidths[i])
 
 
     ax.set_ylabel('SFR [M$_{\odot}$/yr]')
@@ -377,11 +412,12 @@ def make_sfh_figure_singlepanel(slist,names) :
     add_redshift_axis(slist[0],ax)
 
 
-    
-def make_sfh_figure(slist, names) : 
+def make_cummulative_mass(slist,names,kap_runs = None,linewidths=None) : 
     from scipy.interpolate import interp1d
 
-    f,axs = plt.subplots(3,1,figsize=(8,10))
+    f,ax = plt.subplots()
+
+    if linewidths is None: linewidths=np.ones(len(slist))
 
     sph = pynbody.filt.Sphere('20 kpc')
 
@@ -389,57 +425,142 @@ def make_sfh_figure(slist, names) :
 
     tt,aa,sfr,high,low = np.genfromtxt('/home/itp/roskar/rad_fbk/sfr_obs_12.txt').T
 
+#    ax.plot(tt[::10],sfr[::10],color='k')
+#    ax.fill_between(tt[::10],sfr[::10]+high[::10],sfr[::10]-low[::10],alpha=.2,color='k',label='Moster')
+#    ax.plot(tt[::10],sfr[::10],'--k')
     
+    # leitner data
 
-    for ax in axs.flatten(): 
-        ax.plot(tt[::10],sfr[::10],color='k')
-        ax.fill_between(tt[::10],sfr[::10]+high[::10],sfr[::10]-low[::10],alpha=.2,color='k')
+    t,z,sfr = get_leitner_data('10.40')
+    t2,z2,sfr2 = get_leitner_data('10.60')
+
+#    ax.fill_between(pynbody.analysis.cosmology.age(slist[0],z),sfr,sfr2,alpha=.2,color='b',label='Leitner')
 
 
-    for i, s in enumerate(slist) : 
+    for i, s in enumerate(slist[:3]) : 
         sub = s[sph]
-
-        masses = sub.s['mass'].in_units('Msol')
-        ind = np.where(pynbody.analysis.cosmology.age(sub)-sub.s['tform'] > .2)[0]
-        masses[ind] *= 1.2
+        with sub.immediate_mode:
+            masses = sub.s['mass'].in_units('Msol').view(np.ndarray)
+            tform = sub.s['tform'].in_units('Gyr').view(np.ndarray)
+        sfh,bins = np.histogram(tform,weights=masses/1e10,range=[0,13.76],bins=50)
         
-        sfh,bins = np.histogram(sub.s['tform'].in_units('Gyr'),weights=masses.in_units('Msol'),
-                                range=[0,13.76],bins=50)
         bins = .5*(bins[:-1]+bins[1:])
-        width = bins[1] - bins[0]
-        sfh /= width
-        if i < len(non_rad) : ind = 0
-        elif i < len(non_rad) + len(rad_fixed_kappa) : ind = 1
-        else: ind = 2
+#        return sfh, bins
+        ax.plot(bins,np.cumsum(sfh), color = paper_colors[i], 
+                label=names[i], linewidth=3)
         
-        
-        axs.flatten()[ind].plot(bins,sfh/1e9,color = get_color(i,len(slist)), label=names[i])
+    if kap_runs is not None : 
+        for i, s in enumerate(kap_runs) : 
+            sub = s[sph]
+            with sub.immediate_mode:
+                masses = sub.s['mass'].in_units('Msol').view(np.ndarray)
+                tform = sub.s['tform'].in_units('Gyr').view(np.ndarray)
+            sfh,bins = np.histogram(tform,weights=masses/1e10,range=[0,13.76],bins=50)
+            bins = .5*(bins[:-1]+bins[1:])
+            ax.plot(bins,np.cumsum(sfh), color = kappa_colors[i],linewidth=4,zorder=-100)
+       
+        # make the colorbar
 
-    for ax in axs.flatten() : 
-        ax.set_ylabel('SFR [M$_{\odot}$/yr]')
-        ax.set_xlim(0,14)
-        ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
-        ax.set_ylim(1e-3,20)
-        ax.set_xlim(.3,14)
+        cb_ax = f.add_axes([.15,.7,.4,.05])
+        a=np.outer(np.arange(1,100,0.01),np.ones(10))
+        cb_ax.imshow(a.T,cmap=plt.cm.Greys,extent=(1,100,0,5),vmin=-10,vmax=70)
+        cb_ax.set_yticklabels('')
+        cb_ax.set_yticks([])
+        plt.setp(cb_ax.get_xticklabels(), fontsize=10)
+        cb_ax.set_xticks(kappas)
+        cb_ax.set_title('$\kappa$',fontsize=10)
 
-    for ax in axs.flatten()[:2] : ax.set_xticklabels('')
-    axs.flatten()[-1].set_xlabel('$t$ [Gyr]')
+
+    ax.set_ylabel('$M_{\star}$ [10$^{10}$ M$_{\odot}$]')
+    ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
+#    ax.set_ylim(1e-3,20)
+    ax.set_xlim(0,s.s['tform'].max())
+    ax.set_xlabel('$t$ [Gyr]')
     
-def make_abundance_matching_figure(slist, names) : 
-    from utils import get_r200
-    xmasses = np.logspace(11.5,12.,20)
-    ystarmasses, errors = pynbody.plot.stars.moster(xmasses,0.0)
+    add_redshift_axis(slist[0],ax)
+
+def make_cummulative_mass_byjjc(slist,names,kap_runs = None,linewidths=None) : 
+    from scipy.interpolate import interp1d
 
     f,ax = plt.subplots()
 
-    ax.fill_between(xmasses,np.array(ystarmasses)/np.array(errors)/xmasses, 
-                    y2 = np.array(ystarmasses)*np.array(errors)/xmasses, facecolor='#BBBBBB',color='#BBBBBB')
+    if linewidths is None: linewidths=np.ones(len(slist))
 
-    ax.plot(xmasses,ystarmasses/xmasses,'--k')
+    sph = pynbody.filt.Sphere('20 kpc')
 
-#    ax.plot(xmasses,np.ones(len(xmasses))*(slist[0].g['mass'].sum()+slist[0].s['mass'].sum())/slist[0].d['mass'].sum(),color='red',linewidth=2)
+    for i, s in enumerate(slist) : 
+        sub = s[sph]
+        with sub.immediate_mode:
+            masses = sub.s['mass'].in_units('Msol').view(np.ndarray)
+            tform = sub.s['tform'].in_units('Gyr').view(np.ndarray)
+        
+        disk = np.where(sub.s['jz']/sub.s['jzmaxe'] > .8)[0]
+        bulge = np.where(sub.s['jz']/sub.s['jzmaxe'] < .5)[0]
 
-    for i,s in enumerate(slist) :
+        sfh_d,bins_d = np.histogram(tform[disk],weights=masses[disk]/1e10,range=[0,13.76],bins=50)
+        sfh_b,bins_b = np.histogram(tform[bulge],weights=masses[bulge]/1e10,range=[0,13.76],bins=50)
+        
+        bins_d = .5*(bins_d[:-1]+bins_d[1:])
+        bins_b = .5*(bins_b[:-1]+bins_b[1:])
+        
+        ax.plot(bins_d,np.cumsum(sfh_d), color = paper_colors[i], 
+                label=names[i], linewidth=3)
+        ax.plot(bins_b,np.cumsum(sfh_b), linestyle = '--', color = paper_colors[i], linewidth=3)
+        
+        
+
+    ax.set_ylabel('$M_{\star}$ [10$^{10}$ M$_{\odot}$]')
+    ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
+#    ax.set_ylim(1e-3,20)
+    ax.set_xlim(0,13.76)
+    ax.set_xlabel('$t$ [Gyr]')
+    
+    add_redshift_axis(slist[0],ax)
+
+def make_sfh_byjjc(slist,names,kap_runs = None,linewidths=None) : 
+    from scipy.interpolate import interp1d
+
+    f,ax = plt.subplots()
+
+    if linewidths is None: linewidths=np.ones(len(slist))
+
+    sph = pynbody.filt.Sphere('20 kpc')
+
+    for i, s in enumerate(slist[:3]) : 
+        sub = s[sph]
+        with sub.immediate_mode:
+            masses = sub.s['mass'].in_units('Msol').view(np.ndarray)
+            tform = sub.s['tform'].in_units('Gyr').view(np.ndarray)
+        
+        disk = np.where(sub.s['jz']/sub.s['jzmaxe'] > .7)[0]
+        bulge = np.where(sub.s['jz']/sub.s['jzmaxe'] < .5)[0]
+
+        sfh_d,bins_d = np.histogram(tform[disk],weights=masses[disk]/1e10,range=[0,13.76],bins=50)
+        sfh_b,bins_b = np.histogram(tform[bulge],weights=masses[bulge]/1e10,range=[0,13.76],bins=50)
+        
+        bins_d = .5*(bins_d[:-1]+bins_d[1:])
+        bins_b = .5*(bins_b[:-1]+bins_b[1:])
+        
+        ax.plot(bins_d,sfh_d, color = paper_colors[i], 
+                label=names[i], linewidth=3)
+        ax.plot(bins_b,sfh_b, linestyle = '--', color = paper_colors[i], linewidth=3)
+        
+        
+
+    ax.set_ylabel('$M_{\star}$ [10$^{10}$ M$_{\odot}$]')
+    ax.legend(loc = 'upper left', frameon=False, prop = dict(size=12))
+#    ax.set_ylim(1e-3,20)
+    ax.set_xlim(0,13.76)
+    ax.set_xlabel('$t$ [Gyr]')
+    
+    add_redshift_axis(slist[0],ax)
+
+
+def gen_halomass_data(sl) : 
+    from pickle import dump
+    from utils import get_r200
+
+    for s in sl : 
         r200 = get_r200(s,pynbody.analysis.profile.Profile(s,ndim=3,min=.4,max=200,type = 'log'))
         print r200
         sph = s[pynbody.filt.Sphere(r200/10.0)]
@@ -450,11 +571,43 @@ def make_abundance_matching_figure(slist, names) :
         
         print '%s %e %e'%(s.filename,np.log10(smass),hmass)
 
-#        if i==0 : 
- #           ax.plot(np.log10(hmass),smass/hmass,'rx',label=names[i])
- #       else:
-        ax.plot(hmass,smass/hmass,'o',color=get_color(i,len(slist)),label=names[i])
-        
+        dump({'smass':smass, 'hmass':hmass, 'r200':r200},open('%s.smhm'%s.filename,'w'))
+
+def make_abundance_matching_figure(slist, names, kappa_runs = None) : 
+    from pickle import load
+
+    xmasses = np.logspace(11.5,12.,20)
+    ystarmasses, errors = pynbody.plot.stars.moster(xmasses,0.0)
+
+    f,ax = plt.subplots()
+
+    ax.fill_between(xmasses,np.array(ystarmasses)/np.array(errors)/xmasses, 
+                    y2 = np.array(ystarmasses)*np.array(errors)/xmasses, facecolor='#BBBBBB',color='#BBBBBB')
+
+    ax.plot(xmasses,ystarmasses/xmasses,'--k')
+
+    for i,s in enumerate(slist) :
+        smhm = load(open('%s.smhm'%s.filename,'r'))
+        ax.plot(smhm['hmass'],smhm['smass']/smhm['hmass'],'o',ms=10,color=paper_colors[i],label=names[i],linewidth=1)
+
+    if kappa_runs is not None: 
+        for i, s in enumerate(kappa_runs) : 
+            smhm = load(open('%s.smhm'%s.filename,'r'))
+            ax.plot(smhm['hmass'],smhm['smass']/smhm['hmass'],'o',ms=10, markeredgewidth=.5,
+                    color=kappa_colors[i])
+
+        # make the colorbar
+
+        cb_ax = f.add_axes([.15,.7,.4,.05])
+        a=np.outer(np.arange(1,100,0.01),np.ones(10))
+        cb_ax.imshow(a.T,cmap=plt.cm.Greys,extent=(1,100,0,5),vmin=-10,vmax=60)
+        cb_ax.set_yticklabels('')
+        cb_ax.set_yticks([])
+        plt.setp(cb_ax.get_xticklabels(), fontsize=10)
+        cb_ax.set_xticks(kappas)
+        cb_ax.set_title('$\kappa$',fontsize=10)
+
+
     ax.legend(frameon=False, prop = dict(size=12),loc='upper left',scatterpoints=1)
     ax.set_xlim(.4e12,.7e12)
  #  ax.set_ylim(10.0,11.5)
@@ -504,7 +657,7 @@ def make_rgb_figure(runs,names,outnum,width) :
     for ax in axs.flatten() : clear_labels(ax)
     plt.subplots_adjust(hspace=.05,wspace=.05)
 
-def make_all_plots(sl,sl2,names) : 
+def make_all_plots(sl,sl2,kap,names) : 
     
     # image figure 
 
@@ -528,10 +681,14 @@ def make_all_plots(sl,sl2,names) :
     
     # abundance matching
     
-    make_abundance_matching_figure(sl,names)
+    make_abundance_matching_figure(sl[:3],names,kap)
     savefig('abundance_matching')
 
-    
+    # cumulative mass
+
+    make_cummulative_mass(sl,names,kap)
+    savefig('cumulative_mass')
+
     # highz maps
     for s in sl2 : 
         ram.make_rgb_image(s.g[pynbody.filt.Sphere('300 kpc')],400,filename='%s.png'%(s.filename.replace('/','_')))
@@ -546,4 +703,156 @@ def make_all_plots(sl,sl2,names) :
     make_rgb_figure(paper_runs,paper_names,101,500)
     savefig('rgb_lowz')
 
+    
+def compare_to_high_res(slr1, slr2, shr) : 
+    f,axs = plt.subplots(1,3,figsize=(16.125,4))
+    sph = pynbody.filt.Sphere('20 kpc')
+
+    for i, s in enumerate([slr1,slr2,shr]) : 
+        p = pynbody.analysis.profile.Profile(s,max=50)
+        ps = pynbody.analysis.profile.Profile(s.s,max=50)
+        
+        if i < 2: 
+            color = paper_colors[i]
+            linestyle = '-'
+            label = paper_names[i]
+        else : 
+            color = 'k'
+            linestyle = '--'
+            label = 'high res'
+
+        axs[0].plot(ps['rbins'],ps['density'].in_units('Msol kpc^-2'),color=color,linestyle=linestyle,label=label)
+        axs[1].plot(ps['rbins'],p['v_circ'].in_units('km s^-1'),color=color,linestyle=linestyle,label=label)
+
+        sub = s[sph]
+        with sub.immediate_mode:
+            masses = sub.s['mass'].in_units('Msol')
+
+        ind = np.where(pynbody.analysis.cosmology.age(sub)-sub.s['tform'] > .2)[0]
+        masses[ind] *= 1.2
+        
+        sfh,bins = np.histogram(sub.s['tform'].in_units('Gyr'),weights=masses.in_units('Msol'),
+                                range=[0,13.76],bins=50)
+        bins = .5*(bins[:-1]+bins[1:])
+        width = bins[1] - bins[0]
+        sfh /= width
+        
+        #if i == 0: 
+        #    ax.plot(bins,sfh/1e9,'--r', label=names[i])
+        #else:
+        axs[2].plot(bins,sfh/1e9,color = color, linestyle=linestyle)
+
+    axs[0].semilogy()
+    axs[0].set_xlabel('$R$ [kpc]')
+    axs[0].set_ylabel('$\Sigma_{\star}$ [M$_{\odot}$/kpc]')
+    axs[0].legend(frameon=False, prop = dict(size=12))
+    axs[1].set_xlabel('$R$ [kpc]')
+    axs[1].set_ylabel('$v_{circ}$')
+    axs[2].set_xlabel('$t$ [Gyr]')
+    axs[2].set_ylabel('SFR [M$_{\odot}$/yr]')
+    
+    plt.subplots_adjust(wspace=.25)
+
+
+
+def snrad() : 
+    plt.figure()
+
+    kappa_IR=1. # Draine dust opacity in cm^2/g
+    parsec=3e18
+    n_star=2.4
+    delta_x=200.*parsec
+    n=10**(np.linspace(0,11,500)-6.) # Gas H density in H/cc
+    tau=kappa_IR*delta_x*n*1.66e-24/0.76
+    fuv=1.-np.exp(-1000.*tau)
+    Tsn=1e51/2e34/1.38e-16*1.66e-24
+    Trad=1e53/2e34/1.38e-16*1.66e-24
+
+    plt.plot(n,Tsn*0.1*n_star/(n+0.1*n_star), 'k--', label = 'supernovae')
+    
+    eta_rad = 1.
+    eta_sig = 1.
+    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
+             label='$\kappa_{\mathrm{IR}}=1 {\mathrm{~cm}}^2/{\mathrm{g}}$')
+
+    eta_rad=1.0
+    eta_sig=5.
+    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
+             label='$\kappa_{\mathrm{IR}}=5 {\mathrm{~cm}}^2/{\mathrm{g}}$')
+
+    eta_rad=1.
+    eta_sig=25.
+    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
+             label='$\kappa_{\mathrm{IR}}=25 {\mathrm{~cm}}^2/{\mathrm{g}}$')
+
+#    eta_rad=0.1
+#    eta_sig=10.
+#    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
+#             label='$\kappa_{\mathrm{IR}}=1 {\mathrm{~cm}}^2/{\mathrm{g}}$')
+
+    plt.plot([1e-4,1e4],[1e7,1e7], 'k:')
+
+    plt.loglog()
+    
+    plt.xlabel('Hydrogen number density [amu/cm$^3$]')
+    plt.ylabel('Cell temperature [K]')
+
+    plt.xlim(1e-4,1e4)
+    plt.ylim(1e6,1e10)
+
+    plt.legend(frameon=False)
+
+
+def sb99(): 
+    plt.figure()
+
+    data = np.genfromtxt('/home/itp/roskar/homegrown/romain_plots/Lbol.dat',names=['t','lrad','erad','lwind','ewind','lsn','esn'])
+
+    plt.plot(data['t'],10**data['erad'],'k-', label='radiation')
+    plt.plot(data['t'],10**data['ewind'],'k--', label='winds')
+    plt.plot(data['t'],10**data['esn'],'k:', label='supernovae')
+    
+    plt.loglog()
+    plt.xlim(1e4,1e9)
+    plt.ylim(1e46,1e52)
+    plt.legend(loc='upper left', frameon=False)
+
+    
+    
+def dust() : 
+    plt.figure()
+
+    data = np.genfromtxt('/home/itp/roskar/homegrown/romain_plots/kext_albedo_WD_MW_3.1_60_D03.all',
+                         names = ['l','a','cos','sig','kap','cos2'],usecols=range(6),skip_header=80)
+
+    
+    
+    #ll = 10.**(np.linspace(0,4,100)-1)
+    
+    plt.plot(data['l'],data['kap']/125.,'k')
+    
+    data = np.genfromtxt('/home/itp/roskar/homegrown/romain_plots/0__comp.Gofn',
+                         names=['l1','ka','kb','kc','kd'],usecols=range(5))
+    plt.plot(data['l1'],data['kc'],'k')
+
+    data = np.genfromtxt('/home/itp/roskar/homegrown/romain_plots/0__Gofn.kap',
+                         names=['l1','ka','kb','kc','kd'],usecols=range(5))
+    plt.plot(data['l1'],data['kc'],'k')
+
+    data = np.genfromtxt('/home/itp/roskar/homegrown/romain_plots/0__komp.kap',
+                         names=['l1','ka','kb','kc','kd'],usecols=range(5))
+    plt.plot(data['l1'],data['kc'],'k')
+
+    data = np.genfromtxt('/home/itp/roskar/homegrown/romain_plots/1.dat',
+                         names=['l1','ka','kb','kc','kd'],usecols=range(5))
+    plt.plot(data['l1'],data['kc'],'k')
+    
+
+    plt.loglog()
+    
+    plt.xlim(1e-1,1e3)
+    plt.ylim(1e-2,1e3)
+
+    plt.xlabel('$\lambda$ [micron]')
+    plt.ylabel('$\kappa$ [cm$^2$/g]')
     

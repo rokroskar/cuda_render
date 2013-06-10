@@ -156,7 +156,7 @@ def zrms_deltar_rform(s,gridsize=(20,20)):
         plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red',linewidth=1.5)
 
         im = plt.imshow(zrms-zrms_i,origin='lower',extent=(min(xs),max(xs),min(ys),max(ys)),
-                        aspect='auto',vmin=-.2,vmax=1.,interpolation='nearest')
+                        aspect='auto',vmin=-.2,vmax=1.,interpolation='nearest', cmap=plt.cm.Greys)
                       
         plt.xlabel(r'$\Delta R$ [kpc]',fontweight='bold', fontsize='small')
         plt.ylabel('Age [Gyr]', fontweight='bold', fontsize='small')
@@ -358,7 +358,7 @@ def hz_feh_ofe(s,gridsize=(20,20),rmin=4,rmax=9,ncpu=pynbody.config['number_of_t
     plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
     im = plt.imshow(hz,origin='lower',
                     extent=(min(xs), max(xs), min(ys), max(ys)),
-                    aspect='auto',vmin=0,vmax=0.6,interpolation='nearest')
+                    aspect='auto',vmin=0.1,vmax=0.5,interpolation='nearest')
         
     cb = plt.colorbar(im)
     cb.set_label('$h_z [kpc]$',fontsize='smaller')
@@ -887,3 +887,46 @@ def make_resolution_flare_plot(slist) :
             print flist[i], r, fit
 
     return fits
+
+
+def low_alpha_corner(s, rmin=4,rmax=9) : 
+    fehfilt = pynbody.filt.BandPass('feh',.1,.2)
+    ofefilt = pynbody.filt.LowPass('ofe', -.1)
+    sn = pynbody.filt.BandPass('rxy',rmin,rmax)
+
+    f,axs=plt.subplots(2,3,figsize=(10,10))
+
+    axs = axs.flatten()
+    print len(s.s[fehfilt&ofefilt&sn])
+    axs[0].hist(s.s[fehfilt&ofefilt&sn]['age'],bins=100,histtype='step')
+    axs[0].set_xlabel('Age [Gyr]')
+    
+    axs[1].hist(s.s[fehfilt&ofefilt&sn]['rform'],bins=100,histtype='step',cumulative=True, normed=True)
+    axs[1].set_xlabel('$R_{form}$ [kpc]')
+    axs[1].set_ylim(0,1.0)
+    
+    axs[2].hist(s.s[fehfilt&ofefilt&sn]['jz']/s.s[fehfilt&ofefilt&sn]['jzmaxe'],bins=100,histtype='step')
+    axs[2].set_xlabel('$J_z/J_{circ}$')
+    
+    axs[3].plot(s.s[fehfilt&ofefilt&sn]['rform'], 
+                s.s[fehfilt&ofefilt&sn]['age'], '.', alpha=.1)
+    axs[3].set_xlabel('$R_{form}$')
+    axs[3].set_ylabel('Age [Gyr]')
+
+    axs[4].plot(s.s[fehfilt&ofefilt&sn]['rform'], 
+                s.s[fehfilt&ofefilt&sn]['jz']/s.s[fehfilt&ofefilt&sn]['jzmaxe'], '.', alpha=.1)
+    axs[4].set_xlabel('$R_{form}$')
+    axs[4].set_ylabel('$J_z/J_{circ}$')
+
+    prof = pynbody.analysis.profile.Profile(s.s[fehfilt&ofefilt&sn],calc_x=lambda x: x['age'],type='log',nbins=10,min=2)
+
+    prof2 = pynbody.analysis.profile.Profile(s.s[sn],calc_x=lambda x: x['age'],type='log',nbins=10,min=2)
+
+    axs[5].plot(prof['rbins'],np.sqrt(prof['vr_disp']**2+prof['vt_disp']**2+prof['vz_disp']**2),'k-',label=r'$\sigma_{tot}$',linewidth=2)
+    axs[5].plot(prof['rbins'],prof['vr_disp'],'k--',label=r'$\sigma_{tot}$',linewidth=2)
+    axs[5].plot(prof2['rbins'],np.sqrt(prof2['vr_disp']**2+prof2['vt_disp']**2+prof2['vz_disp']**2),'r-',label=r'$\sigma_{tot}$',linewidth=2)
+    axs[5].plot(prof2['rbins'],prof2['vr_disp'],'r--',label=r'$\sigma_{tot}$',linewidth=2)
+    axs[5].set_xlabel('Age [Gyr]')
+    axs[5].set_ylabel('$\sigma$')
+
+    

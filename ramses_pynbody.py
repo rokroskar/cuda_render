@@ -73,7 +73,9 @@ def load_hop(s):
         data = np.genfromtxt(filename,unpack=True)
     except IOError : 
         import os
-        os.system('cd %s;/home/itp/roskar/ramses/galaxy_formation/script_hop.sh %d;cd ..'%(s.filename[:-12],int(name)))
+        dir = s.filename[:-12] if len(s.filename[:-12]) else './'
+        
+        os.system('cd %s;/home/itp/roskar/ramses/galaxy_formation/script_hop.sh %d;cd ..'%(dir,int(name)))
         data = np.genfromtxt(filename,unpack=True)
 
     return data
@@ -191,19 +193,160 @@ def convert_to_tipsy(output) :
     s[pynbody.filt.Sphere('200 kpc')].write(pynbody.tipsy.TipsySnap,'%s.tipsy'%output[-12:])
 
 
+def prepare_for_amiga(outname, write = False, run_pkdgrav = False, run_amiga=False, zbox=False) :
+    import os 
+    import isolated as iso
+    from pynbody.units import Unit
+
+    s = pynbody.load(outname)
+    
+    massunit = (1.0/pynbody.units.G*
+                pynbody.units.Unit('%f cm'%s._info['unit_l'])**3/
+                pynbody.units.Unit('%f s'%s._info['unit_t'])**2).in_units('Msol')
+    print massunit
+    
+
+    newfile = "%s_fullbox.tipsy"%outname
+
+    if write:
+        s['mass'].convert_units('%f Msol'%massunit)
+        s.g['temp']
+        print s['mass']
+        s.s['tform'].convert_units('%f s'%s._info['unit_t'])
+        s.g['metals'] = s.g['metal']
+        s['pos']
+        s['eps'] = s.g['smooth'].min()
+        s['eps'].units = s['pos'].units
+        del(s.g['metal'])
+        del(s['smooth'])
+        print s['vel']
+        print s['pos']
+        
+        s.write(filename='%s'%newfile, fmt=pynbody.tipsy.TipsySnap, binary_aux_arrays = True)
+
+    if run_pkdgrav: spawn_pkdgrav(s,newfile,zbox)
+    if run_amiga : spawn_amiga(s,newfile,zbox)
+
+def spawn_pkdgrav(s, newfile, zbox = False) : 
+    from pynbody.units import Unit, G
+    import os
+
+    l_unit = Unit('%f cm'%s._info['unit_l'])
+    t_unit = Unit('%f s'%s._info['unit_t'])
+    v_unit = l_unit/t_unit
+    
+    massunit = (1.0/G*l_unit**3/t_unit**2).in_units('Msol')
+
+    f = open('%s.param'%newfile,'w')
+        # determine units
+    f.write('dKpcUnit = %f\n'%l_unit.in_units('kpc'))
+    f.write('dMsolUnit = %e\n'%massunit)
+    f.write('dOmega0 = %f\n'%s.properties['omegaM0'])
+    f.write('dLambda = %f\n'%s.properties['omegaL0'])
+    h = Unit('%f km s^-1 Mpc^-1'%(s.properties['h']*100))
+    f.write('dHubble0 = %f\n'%h.in_units(v_unit/l_unit))
+    f.write('bComove = 1\n')
+    f.close()
+
+    
+        
+
+    if zbox : 
+        f = open('%s.pkdgrav.zbox.sh'%newfile,'w')
+        f.write('#!/bin/sh\n')
+        f.write('#SBATCH -J zerosteps\n')
+        f.write('#SBATCH --ntasks=64 --exclusive\n')
+        f.write('export PATH=/opt/mpi/mvapich2/1.9b/gcc/4.7.2/bin:/opt/gcc/4.7.2/bin:$PATH\n')
+        f.write('export LD_LIBRARY_PATH=/opt/mpi/mvapich2/1.9b/gcc/4.7.2/lib:/opt/gcc/4.7.2/lib64:/opt/gcc/4.7.2/lib\n')
+        f.write('srun /home/itp/roskar/bin/pkdgrav2_mpi +potout +accout +vstart +std +vdetails -n 0 -o %s -gas +overwrite -I %s %s.param\n'%(newfile,newfile,newfile))
+        f.write('python finish.py\n')
+        f.close()
+        f = open('finish.py','w')
+        f.write('#!/usr/bin/python\n')
+        f.write('import ramses_pynbody as ram\n')
+        f.write('ram.organize("%s")\n'%newfile)
+        os.system('sbatch %s.pkdgrav.zbox.sh'%newfile)
+
+    else : 
+        command = "~/bin/pkdgrav2_pthread -sz 30 +potout +accout +vstart +std +vdetails -n 0 -o %s -I %s %s.param"%(newfile,newfile,newfile)
+        print command
+        os.system('rm .lockfile')
+        os.system(command)
+        organize(newfile)
+
+def organize(filename) : 
+    import os
+
+    os.system('mv %s.00000.pot %s.pot'%(filename,filename))
+    os.system('mv %s.00000.acc %s.acc'%(filename,filename))
+    os.system('rm %s.00000.*'%filename)
+    st = pynbody.load(filename)
+    st['phi'] = st['pot']
+    st['phi'].write(overwrite=True)
+
+def spawn_amiga(s, newfile, zbox = False) :
+    from pynbody.units import Unit, G
+    import os
+
+    massunit = massunit = (1.0/G*
+                           Unit('%f cm'%s._info['unit_l'])**3/
+                           Unit('%f s'%s._info['unit_t'])**2).in_units('Msol')
+
+    f = open('%s.AHF.input'%newfile,'w')
+    f.write('[AHF]\n')
+    f.write('ic_filename = %s\n'%newfile)
+    f.write('ic_filetype = 90\n')
+    f.write('outfile_prefix = %s\n'%newfile)
+    f.write('LgridDomain = 256\n')
+    f.write('LgridMax = 2097152\n')
+    f.write('NperDomCell = 5\n')
+    f.write('NperRefCell = 5\n')
+    f.write('VescTune = 1.0\n')
+    f.write('NminPerHalo = 50\n')
+    f.write('RhoVir = 0\n')
+    f.write('Dvir = 200\n')
+    f.write('MaxGatherRad = 1.0\n')
+    f.write('[TIPSY]\n')
+    f.write('TIPSY_BOXSIZE = %e\n'%(s.properties['boxsize'].in_units('Mpc')*s.properties['h']))
+    f.write('TIPSY_MUNIT   = %e\n'%(massunit*s.properties['h']))
+    f.write('TIPSY_OMEGA0  = %f\n'%s.properties['omegaM0'])
+    f.write('TIPSY_LAMBDA0 = %f\n'%s.properties['omegaL0'])
+    
+    velunit = Unit('%f cm'%s._info['unit_l'])/Unit('%f s'%s._info['unit_t'])
+    
+    f.write('TIPSY_VUNIT   = %e\n'%velunit.ratio('km s^-1'))
+    
+
+    # the thermal energy in K -> km^2/s^2
+
+    f.write('TIPSY_EUNIT   = %e\n'%((pynbody.units.k/pynbody.units.m_p).in_units('km^2 s^-2 K^-1')*5./3.))
+    f.close()
+    if zbox : 
+        f = open('%s.zbox.sh'%newfile,'w')
+        f.write('#!/bin/sh\n')
+        f.write('#SBATCH -J amiga\n')
+        f.write('#SBATCH -N 1 -n 1 --cpus-per-task=16\n')
+        f.write('export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK\n')
+        f.write('srun /home/itp/roskar/bin/amiga %s.AHF.input\n'%newfile)
+        f.close()
+        os.system('sbatch %s.zbox.sh'%newfile)
+    else : 
+        os.environ['OMP_NUM_THREADS'] = '30'
+        os.system("~/bin/amiga %s.AHF.input"%newfile)
+
 def make_rgb_image(s,width,xsize=500,ysize=500,filename='test.png') : 
     from PIL import Image
     from matplotlib.colors import Normalize
 
     rgbArray = np.zeros((xsize,ysize,3),'uint8')
 
-    tem = pynbody.plot.image(s,qty='temp',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
-    rho = pynbody.plot.image(s,qty='rho',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
-    met = pynbody.plot.image(s,qty='metal',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,log=False,approximate_fast=False)
+    tem = pynbody.plot.image(s,qty='temp',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True,av_z='rho')
+    rho = pynbody.plot.image(s,qty='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True,av_z='rho')
+    met = pynbody.plot.image(s,qty='metal',width=width,resolution=xsize,noplot=True,threaded=10,log=False,approximate_fast=False, denoise=True,av_z='rho')
     
-    rgbArray[...,0] = Normalize(vmin=3.5,vmax=6.5,clip=True)(tem)*256
+    rgbArray[...,0] = Normalize()(tem)*256#Normalize(vmin=3.5,vmax=6.5,clip=True)(tem)*256
     rgbArray[...,1] = Normalize()(rho)*256
-    rgbArray[...,2] = Normalize(vmin=-3,vmax=0,clip=True)(np.log10(met/0.02))*256
+    rgbArray[...,2] = Normalize()(np.log10(met/0.02))*256#Normalize(vmin=-3,vmax=0,clip=True)(np.log10(met/0.02))*256
 
     img = Image.fromarray(rgbArray)
 
@@ -274,3 +417,5 @@ def tform(self) :
     top.s['tform'].units = 'Gyr'
 
     return self.s['tform']
+
+

@@ -4,6 +4,9 @@ import smbh
 import matplotlib.pylab as plt
 import utils
 
+
+paper_times = [5010, 5025, 5040, 5080]
+
 def make_eo_fo_clumps_figure(s,h) : 
 
     fig = plt.figure(figsize=(16,11))
@@ -41,41 +44,39 @@ def make_r_z_figure(path):
 
     orbit = np.load(path+'/bh_orbit.npz')
 
-    fig = plt.figure(figsize=(10,15))
-    
     rs = np.sqrt((orbit['pos'][:,:,0:2]**2).sum(axis=2))
 
-    ax = fig.add_subplot(2,1,1)
+    dr = np.sqrt(((orbit['pos'][:,0,:] - orbit['pos'][:,1,:])**2).sum(axis=1))
 
-    plt.plot(orbit['t'], rs*1000.)
+    fig, axs = plt.subplots(2,1,figsize=(10,15))
 
-    plt.xlabel('$t$ [Myr]')
-    plt.ylabel('$R$ [pc]')
-    plt.semilogy()
-    plt.xlim(orbit['t'].min(), orbit['t'].max())
+    axs[0].plot(orbit['t'], rs*1000.)
+#    plt.plot(orbit['t'], dr*1000.)
 
-    ax = fig.add_subplot(2,1,2)
-    
-    plt.plot(orbit['t'], orbit['pos'][:,0,2]*1000.)
-    plt.plot(orbit['t'], orbit['pos'][:,1,2]*1000.)
+    axs[0].set_xlabel('$t$ [Myr]')
+    axs[0].set_ylabel('$R$ [pc]')
+    axs[0].semilogy()
+    axs[0].set_xlim(orbit['t'].min(), orbit['t'].max())
 
-    plt.xlabel('$t$ [Myr]')
-    plt.ylabel('$z$ [pc]')
-    plt.xlim(orbit['t'].min(), orbit['t'].max())
-    
+    axs[1].plot(orbit['t'], orbit['pos'][:,0,2]*1000.)
+    axs[1].plot(orbit['t'], orbit['pos'][:,1,2]*1000.)
+
+    axs[1].set_xlabel('$t$ [Myr]')
+    axs[1].set_ylabel('$z$ [pc]')
+    axs[1].set_xlim(orbit['t'].min(), orbit['t'].max())
+
+    # zrms of the stars at 5, 10, 50 pc
+    zrms = [12, 20, 42]
+
+    for zr in zrms :
+        axs[1].plot([orbit['t'].min(),orbit['t'].max()],
+                    [zr,zr],'k:')
     
 def load_snapshots(flist = None):
     if flist is None : 
-        flist = ['6/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.00614', 
-                 '6/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.00660',
-                 '6/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.00691',
-                 '22/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.02275']
-    slist = []
-
-    for f in flist : 
-        slist.append(pynbody.load(f))
- 
-    return slist
+        flist = map(smbh.nearest_output, paper_times)
+     
+    return [pynbody.load(x) for x in flist]
 
 
 def load_snapshot_sequence(dir='./', ntiles = 20, t1 = None, t2 = None):
@@ -92,33 +93,30 @@ def load_snapshot_sequence(dir='./', ntiles = 20, t1 = None, t2 = None):
     return [pynbody.load(x) for x in map(smbh.nearest_output, times)]
     
 
-def center_snapshot(s) : 
+def center_snapshot(s, align=True) : 
     if np.diff(s[smbh.bh_index(s)]['r'])[0] > 0.2 : 
             pynbody.analysis.halo.center(s,mode='ind',ind=smbh.bh_index(s),vel=False)
     else:
         pynbody.analysis.halo.center(s.g,mode='hyb',vel=False)
 
     pynbody.analysis.halo.vel_center(s.g,cen_size=.5)
- 
+    if align: pynbody.analysis.angmom.faceon(s.g,disk_size='100 pc', cen=[0,0,0])
+
+
 
 def make_filmstrip_figure(slist): 
 
-    f, axs = plt.subplots(5,4,figsize=(8,10))
+    f, axs = plt.subplots(len(slist)/2,4,figsize=(8,len(slist)/2*2.0))
 
-    cmap = plt.cm.Blues_r
+    cmap = plt.cm.Greys_r
     
+    width = .25
+
     for i,s in enumerate(slist) : 
         ax = axs.flatten()[i*2]
-        
-        if np.diff(s[smbh.bh_index(s)]['r'])[0] > 0.2 : 
-            pynbody.analysis.halo.center(s,mode='ind',ind=smbh.bh_index(s))
-            width = .7
-        else:
-            pynbody.analysis.halo.center(s.g,mode='hyb')
-            width = .25
 
-        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, threaded=20)
-        ax.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')-slist[0].properties['time'].in_units('Myr')), 
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, threaded=10, approximate_fast=False)
+        ax.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')), 
                      (0.1,0.85), color='white', fontweight='bold', 
                      xycoords = 'axes fraction', fontsize=12)
         smbh.overplot_bh(s,ax)
@@ -127,7 +125,7 @@ def make_filmstrip_figure(slist):
 
         ax = axs.flatten()[i*2+1]
         s.rotate_x(90)
-        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap)
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, approximate_fast=False, threaded=10)
         smbh.overplot_bh(s,ax)
         ax.set_xlim(-width/2.0,width/2.0)
         ax.set_ylim(-width/2.0,width/2.0)
@@ -194,6 +192,13 @@ def make_morph_evol_figure(slist,width=1.0,overplot_bh = True) :
     
     plt.subplots_adjust(hspace=0.1)
 
+def make_zoomin_figure_single(s) : 
+    f, axs = plt.subplots(1,4,figsize=(8,2))
+    widths = [50,10,1,.2]
+
+    for width,ax in zip(widths,axs) : 
+        pynbody.analysis.plot()
+
 def make_zoomin_figure(slist) : 
     f, axs = plt.subplots(5,4,figsize=(8,10))
     cmap = plt.cm.Blues_r
@@ -210,7 +215,7 @@ def make_zoomin_figure(slist) :
                     
         for j in range(4) : 
             
-            pynbody.plot.image(s.g,width=widths[j],units='Msol kpc^-2', subplot=ax[j], show_cbar=False, cmap=cmap, threaded=20)
+            pynbody.plot.image(s.s,width=widths[j],units='Msol kpc^-2', subplot=ax[j], show_cbar=False, cmap=cmap, threaded=20)
         
         ax[0].annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')-slist[0].properties['time'].in_units('Myr')), 
                        (0.1,0.85), color='white', fontweight='bold', 
@@ -263,9 +268,6 @@ def central_vsigma(slist) :
     d = pynbody.filt.Disc(1,.1)
 
     fig, axs = plt.subplots(2,1, figsize=(8,12))
-
-    labels = ['nomet','met',]
-    colors = ['b','r']
 
     for i, s in enumerate(slist) : 
         pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.01,max=1)
@@ -368,11 +370,13 @@ def temperature_maps(sl) :
 def vsigma_vs_time(sl) : 
     fig, ax = plt.subplots()
 
-    for s in sl : 
+    for i,s in enumerate(sl) : 
+        color = get_color(i,len(sl))
+
         s.g['speed'] = np.sqrt(s.g['v2'])
         ind = np.where(s.g['rho'].in_units('m_p cm^-3') < 1e6)[0]
         p = pynbody.analysis.profile.Profile(s.g[ind],max = 1, min = .002, type = 'log', nbins=20)
-        ax.plot(p['rbins'].in_units('pc'), p['speed']/p['speed_disp'], label = 't=%.0f Myr'%s.properties['time'].in_units('Myr'))
+        ax.plot(p['rbins'].in_units('pc'), p['speed']/p['speed_disp'], label = 't=%.0f Myr'%s.properties['time'].in_units('Myr'),color=color)
 
     ax.set_xlabel('$R$ [pc]')
     ax.set_ylabel(r'$v/\sigma$')
@@ -451,10 +455,9 @@ def make_jeansmass_figure(s) :
     
     pass
 
-def make_sfr_figure() : 
+def make_sfr_figure(s) : 
     f,axs = plt.subplots(3,1)
 
-    s = pynbody.load('../gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc/45/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.04500')
     sl_s = pynbody.tipsy.StarLog('../gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc/gas_merger0.1_thr10_Rx8_nometalcool_1pc_rc.starlog')
 
     p = pynbody.load('../gas_merger0.1_thr10_Rx8_nometalcool/6/gas_merger0.1_thr10_Rx8_nometalcool.00613')
@@ -485,6 +488,52 @@ def make_sfr_figure() :
     axs[2].plot(.5*(bins_s[:-1]+bins_s[1:]), h_s/scale*2.3e5)
     
 
+def plot_sfr(s) : 
+    sfh,bins = np.histogram(s.s['tform'].in_units('Gyr'),weights=s.s['mass'].in_units('Msol'),
+                            range=[4,5.1],bins=100)
+    bins = .5*(bins[:-1]+bins[1:])
+    width = bins[1] - bins[0]
+    sfh /= width
+    sfh /= 1e9
+
+    f,ax=plt.subplots()
+    ax.plot(bins,sfh,'k')
+    ax.set_xlabel('$t$ [Gyr]')
+    ax.set_ylabel('SFR [M$_{\odot}~\mathrm{yr}^{-1}$]')
+
+
+def plot_density_profiles(sl) : 
+    f,ax=plt.subplots(2,1,figsize=(8,10))
+    sph = pynbody.filt.Sphere('100 pc')
+    disk = pynbody.filt.Disc('500 pc', '200 pc')
+    
+    for i,s in enumerate(sl):
+        ps = pynbody.analysis.profile.Profile(s.s[disk],min=.001,max=.1,type='log',nbins=50)
+        pg = pynbody.analysis.profile.Profile(s.g[disk],min=.001,max=.1,type='log',nbins=50)
+        
+        ps['rbins'].convert_units('pc')
+        pg['rbins'].convert_units('pc')
+        ps['density'].convert_units('Msol pc^-2')
+        pg['density'].convert_units('Msol pc^-2')
+        
+
+        color = get_color(i,len(sl))
+
+        ax[0].plot(ps['rbins'],ps['density'], color = color, 
+                   label = '%.0f Myr'%s.properties['time'].in_units('Myr'))
+        ax[0].plot(pg['rbins'],pg['density'], color = color, linestyle='--')
+        ax[1].plot(ps['rbins'],ps['z_rms'].in_units('pc'), color = color)
+        ax[1].plot(pg['rbins'],pg['z_rms'].in_units('pc'), color = color, linestyle = '--')
+        
+
+    for a in ax: 
+        a.loglog()
+        a.set_xlabel('$R$ [pc]')
+        
+    ax[0].legend(loc = 'upper right', frameon=False, prop = dict(size=12))
+    ax[0].set_ylabel('$\Sigma_{\star,\mathrm{g}}$ [M$_{\odot}~\mathrm{pc}^{-2}$]')
+    ax[1].set_ylabel('$z_{rms}$ [pc]')
+    
 
 def make_movie(t1,t2) : 
     import glob
@@ -518,8 +567,28 @@ def make_movie(t1,t2) :
         
     
 
+def plot_smbh_forces(sl) : 
+    f,ax=plt.subplots()
+    from pynbody.grav_omp import direct
+
+    t = pynbody.array.SimArray(np.zeros(len(sl)),'Myr')
+    ps = np.empty((len(sl),2))
+    fs = np.empty((len(sl),2,3))
+    fg = np.empty((len(sl),2,3))
+    
+    for i,s in enumerate(sl): 
+        ps[i], fs[i] = direct(s.s,s[smbh.bh_index(s)]['pos'].view(np.ndarray), eps=.001)
+        ps[i],fg[i] = direct(s.g,s[smbh.bh_index(s)]['pos'].view(np.ndarray), eps=.001)
+
+        t[i] = s.properties['time'].in_units('Myr')
+
+    return t, fs, fg
+
 def savefig(fname): 
 
     plt.savefig('smbh_p1_figs/%s.pdf'%fname,format='pdf',bbox_inches='tight')
     plt.savefig('smbh_p1_figs/%s.eps'%fname,format='eps',bbox_inches='tight')
 
+
+def get_color(i,n,cmap=plt.cm.gist_ncar) : 
+    return cmap(int(i*256./n))

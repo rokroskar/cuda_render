@@ -1,6 +1,9 @@
 import numpy as np
 import pynbody as pyn
-import pylab as plt
+try :
+    import pylab as plt
+except : 
+    pass
 import pynbody.units as units
 import multiprocessing
 
@@ -22,7 +25,7 @@ def bh_index(sim) :
 
 
 def overplot_bh(sim,ax):
-    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'ro')
+    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'r.', ms=3)
     
 
 def plot_jeansratio(sim):
@@ -69,6 +72,8 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     flist = glob.glob(dir+'*/*.0????')
     flist.sort(key=lambda x: x[-5:])
+
+    print flist[:10]
     
     s = pyn.load(flist[0])
     inds = bh_index(s.d)
@@ -102,11 +107,6 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
     t = np.append(orb['t'],t)
     r = np.append(orb['r'],r)
     pos = np.append(orb['pos'],pos).reshape((len(t),2,3))
-
-    plt.plot(t - t[0], r)
-    plt.plot(t - t[0], r, 'or')
-    plt.xlabel('time [Myr]')
-    plt.ylabel('r [kpc]')
 
     if output:
         np.savez('bh_orbit',t=t,r=r, pos = pos)

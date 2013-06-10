@@ -103,7 +103,7 @@ def jzmaxr(self) :
     while hasattr(top,'base'): top = top.base
 
     prof = pynbody.analysis.profile.Profile(top,max='100 kpc', min = '.001 kpc', type = 'log', nbins = 100)
-    return interp(self['rxy'], prof['rbins'], prof['j_circ'])
+    return pynbody.array.SimArray(interp(self['rxy'], prof['rbins'], prof['j_circ']), units = prof['j_circ'].units)
 
 @pynbody.snapshot.SimSnap.derived_quantity
 def jzmaxe(self) : 
@@ -117,7 +117,7 @@ def jzmaxe(self) :
     disk = pynbody.filt.Disc('50 kpc', '500 pc')
     prof = pynbody.analysis.profile.Profile(top, nbins = 100, 
                                             type = 'log', min = '0.01 kpc', max = '100 kpc')
-    return interp(self['te'], prof['E_circ'], prof['j_circ'])
+    return pynbody.array.SimArray(interp(self['te'], prof['E_circ'], prof['j_circ']), units = prof['j_circ'].units)
     
     
     

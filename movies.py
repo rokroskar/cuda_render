@@ -5,20 +5,24 @@ from os import system
 from camera import Camera
 
 
-def make_rotating_movie(sim,nframes,x2=100, fileprefix = 'rotating', noticks = True, **kwargs) : 
+def make_rotating_movie(sim,nframes,x2=100, fileprefix = 'dm_movie/rotating', noticks = True, **kwargs) : 
     
     fg = plt.figure(figsize=(10.24,7.68))
     ax = plt.axes((0,0,1,1))
 
     for i in range(nframes) : 
         sim.rotate_y(365.0/nframes)
-        im = pynbody.sph.threaded_render_image(sim.g,kernel=pynbody.sph.Kernel2D(), 
-                                               x2=x2,nx=1024,ny=768, num_threads=10)
+        im = pynbody.sph.render_image(sim,kernel=pynbody.sph.Kernel2D(), 
+                                      x2=x2,nx=1024,ny=768, threaded=10)
+
+        im[im==0.0] = 1e-20
+
         if i == 0: 
             if not kwargs.has_key('vmin'): kwargs['vmin'] = np.log10(im.min())
             if not kwargs.has_key('vmax'): kwargs['vmax'] = np.log10(im.max())
 
-        plt.imshow(np.log10(im), vmin=kwargs['vmin'], vmax=kwargs['vmax'], cmap=plt.cm.Blues_r)
+
+        plt.imshow(np.log10(im), vmin=kwargs['vmin'], vmax=kwargs['vmax'], cmap=plt.cm.Greys_r)
         if noticks:
             for line in ax.get_xticklines() + ax.get_yticklines():
                 line.set_markersize(0)
