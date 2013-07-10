@@ -6,7 +6,7 @@
 
 import matplotlib.pylab as plt
 import numpy as np
-
+import pynbody
 
 def make_tile_figure(nrow,ncol,func,*args,**kwargs) : 
 
@@ -72,3 +72,46 @@ def make_spanned_colorbar(f,axs, label) :
     cbax = f.add_axes([bb1.x1+.01,bb2.y0,0.02,bb1.y1-bb2.y0])
     cb1 = f.colorbar(axs[1,-1].get_images()[0],cax=cbax)
     cb1.set_label(r'%s'%label,fontsize='smaller', fontweight='bold')
+
+def make_rgb_image(s,width,xsize=500,ysize=500,filename='test.png') : 
+    from PIL import Image
+    from matplotlib.colors import Normalize
+
+    rgbArray = np.zeros((xsize,ysize,3),'uint8')
+
+    tem = pynbody.plot.image(s,qty='temp',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True)
+    rho = pynbody.plot.image(s,qty='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True)
+    met = pynbody.plot.image(s,qty='metals',width=width,resolution=xsize,noplot=True,threaded=10,log=False,approximate_fast=False, denoise=True)
+    
+    rgbArray[...,0] = Normalize()(tem)*256#Normalize(vmin=3.5,vmax=6.5,clip=True)(tem)*256
+    rgbArray[...,1] = Normalize()(rho)*256
+    rgbArray[...,2] = Normalize()(np.log10(met/0.02))*256#Normalize(vmin=-3,vmax=0,clip=True)(np.log10(met/0.02))*256
+
+    img = Image.fromarray(rgbArray)
+
+    img.save(filename)
+    
+    return tem,rho,met
+
+
+def make_rgb_stellar_image(s,width,vmin=6,vmax=12,xsize=500,ysize=500,filename='test.png') : 
+    from PIL import Image
+    from matplotlib.colors import Normalize
+    from pickle import dump
+
+    rgbArray = np.zeros((xsize,ysize,3),'uint8')
+
+    R = pynbody.plot.image(s.s,qty='k_lum_den',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, av_z=True)
+    G = pynbody.plot.image(s.s,qty='b_lum_den',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, av_z=True)
+    B = pynbody.plot.image(s.s,qty='u_lum_den',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False,av_z=True)
+    
+    rgbArray[...,0] = Normalize(vmin=vmin,vmax=vmax,clip=True)(R)*256#Normalize(vmin=3.5,vmax=6.5,clip=True)(tem)*256
+    rgbArray[...,1] = Normalize(vmin=vmin,vmax=vmax,clip=True)(G)*256
+    rgbArray[...,2] = Normalize(vmin=vmin,vmax=vmax-.5,clip=True)(B)*256#Normalize(vmin=-3,vmax=0,clip=True)(np.log10(met/0.02))*256
+
+    img = Image.fromarray(rgbArray)
+
+    img.save(filename)
+    dump({'R':R,'G':G,'B':B,'rgb':rgbArray},open(filename+'.imagedump','w'))
+
+    return rgbArray, R, G, B

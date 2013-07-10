@@ -25,7 +25,7 @@ def bh_index(sim) :
 
 
 def overplot_bh(sim,ax):
-    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'r.', ms=3)
+    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'r.', ms=5)
     
 
 def plot_jeansratio(sim):

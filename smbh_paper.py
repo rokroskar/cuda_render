@@ -7,6 +7,8 @@ import utils
 
 paper_times = [5010, 5025, 5040, 5080]
 
+after_merger = [5003,5004,5005,5006,5007]
+
 def make_eo_fo_clumps_figure(s,h) : 
 
     fig = plt.figure(figsize=(16,11))
@@ -72,9 +74,10 @@ def make_r_z_figure(path):
         axs[1].plot([orbit['t'].min(),orbit['t'].max()],
                     [zr,zr],'k:')
     
-def load_snapshots(flist = None):
+def load_snapshots(flist = None, times = None):
     if flist is None : 
-        flist = map(smbh.nearest_output, paper_times)
+        if times is None: times = paper_times
+        flist = map(smbh.nearest_output, times)
      
     return [pynbody.load(x) for x in flist]
 
@@ -106,7 +109,7 @@ def center_snapshot(s, align=True) :
 
 def make_filmstrip_figure(slist): 
 
-    f, axs = plt.subplots(len(slist)/2,4,figsize=(8,len(slist)/2*2.0))
+    f, axs = plt.subplots(len(slist)/2,4,figsize=(12,len(slist)/2*3.0))
 
     cmap = plt.cm.Greys_r
     
@@ -115,25 +118,38 @@ def make_filmstrip_figure(slist):
     for i,s in enumerate(slist) : 
         ax = axs.flatten()[i*2]
 
-        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, threaded=10, approximate_fast=False)
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, threaded=10, approximate_fast=False,vmin=8,vmax=12)
         ax.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')), 
                      (0.1,0.85), color='white', fontweight='bold', 
                      xycoords = 'axes fraction', fontsize=12)
-        smbh.overplot_bh(s,ax)
+        #smbh.overplot_bh(s,ax)
         ax.set_xlim(-width/2.0,width/2.0)
         ax.set_ylim(-width/2.0,width/2.0)
 
+        if i == 0: 
+            ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
+                        arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
+            ax.annotate("250 pc", xy=(0.38,0.065), color ="white",fontsize='smaller', 
+                        xycoords = 'axes fraction')
+
         ax = axs.flatten()[i*2+1]
         s.rotate_x(90)
-        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, approximate_fast=False, threaded=10)
-        smbh.overplot_bh(s,ax)
+        pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, approximate_fast=False, threaded=10, vmin=8,vmax=12)
+#        smbh.overplot_bh(s,ax)
         ax.set_xlim(-width/2.0,width/2.0)
         ax.set_ylim(-width/2.0,width/2.0)
         s.rotate_x(-90)
 
     map(utils.clear_labels,axs.flatten())
     plt.subplots_adjust(hspace=.1,wspace=.1)
-        
+
+    # set the colorbar
+    bb1 = axs.flatten()[3].get_position()
+    bb2 = axs.flatten()[-1].get_position()
+    cbax = f.add_axes([bb1.x1+.01,bb2.y0,0.02,bb1.y1-bb2.y0])
+    cb1 = f.colorbar(axs.flatten()[-1].get_images()[0],cax=cbax)
+    cb1.set_label(r'log($\Sigma$) [M$_{\odot}$ kpc$^{-2}$]',fontsize='smaller', fontweight='bold')
+
 
 def make_morph_evol_figure(slist,width=1.0,overplot_bh = True) : 
     fig = plt.figure(figsize=(12,12))
@@ -193,12 +209,18 @@ def make_morph_evol_figure(slist,width=1.0,overplot_bh = True) :
     plt.subplots_adjust(hspace=0.1)
 
 def make_zoomin_figure_single(s) : 
-    f, axs = plt.subplots(1,4,figsize=(8,2))
-    widths = [50,10,1,.2]
+    from utils import clear_labels
+
+    f, axs = plt.subplots(1,4,figsize=(12,3))
+    widths = ['50 kpc','10 kpc','5 kpc','1 kpc']
 
     for width,ax in zip(widths,axs) : 
-        pynbody.analysis.plot()
-
+        pynbody.plot.image(s.g,width=width,subplot=ax,show_cbar=False,av_z=True,cmap=plt.cm.Greys_r)
+        ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
+                        arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
+        ax.annotate(width, xy=(0.38,0.065), color ="white",fontsize='smaller', 
+                    xycoords = 'axes fraction')
+        clear_labels(ax)
 def make_zoomin_figure(slist) : 
     f, axs = plt.subplots(5,4,figsize=(8,10))
     cmap = plt.cm.Blues_r
@@ -584,6 +606,30 @@ def plot_smbh_forces(sl) :
 
     return t, fs, fg
 
+def central_mass(sl) : 
+    f,ax = plt.subplots()
+    times = np.zeros(len(sl))
+    gmasses = np.zeros(len(sl))
+    smasses = np.zeros(len(sl))
+    gmasses_d = np.zeros(len(sl))
+    smasses_d = np.zeros(len(sl))
+    sph = pynbody.filt.Sphere('200 pc')
+    disc = pynbody.filt.Disc('200 pc','10 pc')
+    for i,s in enumerate(sl):
+        times[i] = s.properties['time'].in_units('Myr')
+        gmasses[i] = s.g[sph]['mass'].in_units('Msol').sum()
+        smasses[i] = s.s[sph]['mass'].in_units('Msol').sum()
+        gmasses_d[i] = s.g[disc]['mass'].in_units('Msol').sum()
+        smasses_d[i] = s.s[disc]['mass'].in_units('Msol').sum()
+    plt.plot(times,gmasses,'b-',label='gas / sphere')
+  #  plt.plot(times,smasses,'g-',label='stars / sphere')
+    plt.plot(times,gmasses_d,'b--',label='gas / disk')
+  #  plt.plot(times,smasses_d,'g--',label='stars / disk')
+    plt.xlabel('time [Myr]')
+    plt.ylabel('Mass enclosed [M$_{\odot}$]')
+    plt.legend()
+    
+
 def savefig(fname): 
 
     plt.savefig('smbh_p1_figs/%s.pdf'%fname,format='pdf',bbox_inches='tight')
@@ -592,3 +638,58 @@ def savefig(fname):
 
 def get_color(i,n,cmap=plt.cm.gist_ncar) : 
     return cmap(int(i*256./n))
+
+def generate_images(s,width,vmin=6,vmax=12):
+    from pickle import dump
+
+    fd,axd=plt.subplots()
+    fo_im,R,G,B = utils.make_rgb_stellar_image(s,width,filename='%s_stars_fo.png'%s.filename,vmin=vmin,vmax=vmax)
+    fo_gas = pynbody.plot.image(s.g,width=width,units='Msol kpc^-2')
+    s.rotate_x(90)
+    
+    eo_im,R,G,B = utils.make_rgb_stellar_image(s,width,filename='%s_stars_eo.png'%s.filename,vmin=vmin,vmax=vmax)
+    eo_gas = pynbody.plot.image(s.g,width=width,units='Msol kpc^-2')
+    dump({'fo':fo_gas, 'eo':eo_gas},open('%s_gas_image'%s.filename,'w'))
+    s.rotate_x(-90)
+
+def make_composite_filmstrip(sl,width) : 
+    import utils
+    from pickle import dump,load
+
+    f, axs = plt.subplots(len(sl)/2,4,figsize=(20,len(sl)/2*5.0))
+    
+    axs=axs.flatten()
+
+    for i, s in enumerate(sl) : 
+        try: 
+            print i, s.filename
+            fo_im = plt.imread('%s_stars_fo.png'%s.filename)
+            eo_im = plt.imread('%s_stars_eo.png'%s.filename)
+            gas_im = load(open('%s_gas_image'%s.filename))
+            fo_gas = gas_im['fo']
+            eo_gas = gas_im['eo']
+            
+        except (RuntimeError, IOError) : 
+            generate_images(s)
+
+        ax = axs[i*2]
+             
+        ax.imshow(fo_im,origin='lower')
+        ax.contour(fo_gas,levels=[8.5,9,10,11,11.5],colors='white',linewidths=.5)
+
+        ax.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')), 
+                     (0.1,0.9), color='white', fontweight='bold', 
+                     xycoords = 'axes fraction', fontsize=12)
+        
+        if i == 0: 
+            ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
+                        arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
+            ax.annotate("250 pc", xy=(0.38,0.065), color ="white",fontsize='smaller', 
+                        xycoords = 'axes fraction')
+
+
+        axs[i*2+1].imshow(eo_im,origin='lower')
+        axs[i*2+1].contour(eo_gas,levels=[8.5,9,10,11,11.5],colors='white',linewidths=.5)
+        
+    for ax in axs: 
+        utils.clear_labels(ax,True)

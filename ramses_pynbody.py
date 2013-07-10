@@ -268,7 +268,7 @@ def spawn_pkdgrav(s, newfile, zbox = False) :
         os.system('sbatch %s.pkdgrav.zbox.sh'%newfile)
 
     else : 
-        command = "~/bin/pkdgrav2_pthread -sz 30 +potout +accout +vstart +std +vdetails -n 0 -o %s -I %s %s.param"%(newfile,newfile,newfile)
+        command = "~/bin/pkdgrav2_pthread -sz 10 +overwrite +potout +accout +vstart +std +vdetails -n 0 -o %s -I %s %s.param"%(newfile,newfile,newfile)
         print command
         os.system('rm .lockfile')
         os.system(command)
@@ -340,9 +340,9 @@ def make_rgb_image(s,width,xsize=500,ysize=500,filename='test.png') :
 
     rgbArray = np.zeros((xsize,ysize,3),'uint8')
 
-    tem = pynbody.plot.image(s,qty='temp',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True,av_z='rho')
-    rho = pynbody.plot.image(s,qty='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True,av_z='rho')
-    met = pynbody.plot.image(s,qty='metal',width=width,resolution=xsize,noplot=True,threaded=10,log=False,approximate_fast=False, denoise=True,av_z='rho')
+    tem = pynbody.plot.image(s,qty='temp',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True)
+    rho = pynbody.plot.image(s,qty='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, denoise=True)
+    met = pynbody.plot.image(s,qty='metal',width=width,resolution=xsize,noplot=True,threaded=10,log=False,approximate_fast=False, denoise=True)
     
     rgbArray[...,0] = Normalize()(tem)*256#Normalize(vmin=3.5,vmax=6.5,clip=True)(tem)*256
     rgbArray[...,1] = Normalize()(rho)*256
@@ -354,36 +354,46 @@ def make_rgb_image(s,width,xsize=500,ysize=500,filename='test.png') :
     
     return tem,rho,met
 
-def make_composite_image(s,xsize=500,width='100 kpc',vmin=-1,vmax=6.5) :
+
+def make_rgb_stellar_image(s,width,xsize=500,ysize=500,filename='test.png') : 
     from PIL import Image
     from matplotlib.colors import Normalize
 
-    rgbArray = np.zeros((xsize,xsize,3),'uint8')
+    rgbArray = np.zeros((xsize,ysize,3),'uint8')
 
-    bband = pynbody.plot.image(s.s,qty='b_lum_den',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
-    rband = pynbody.plot.image(s.s,qty='r_lum_den',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
-    kband = pynbody.plot.image(s.s,qty='k_lum_den',av_z='rho',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False)
+    R = pynbody.plot.image(s.s,qty='k_lum_den',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, av_z=True)
+    G = pynbody.plot.image(s.s,qty='b_lum_den',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False, av_z=True)
+    B = pynbody.plot.image(s.s,qty='u_lum_den',width=width,resolution=xsize,noplot=True,threaded=10,approximate_fast=False,av_z=True)
     
-    norm = Normalize(vmin=vmin,vmax=vmax,clip=True)
-    rgbArray[...,0] = norm(kband)*256
-    rgbArray[...,1] = norm(rband)*256
-    rgbArray[...,2] = norm(bband)*256
+    rgbArray[...,0] = Normalize(vmin=2.,vmax=7.5,clip=True)(R)*256#Normalize(vmin=3.5,vmax=6.5,clip=True)(tem)*256
+    rgbArray[...,1] = Normalize(vmin=2.,vmax=7,clip=True)(G)*256
+    rgbArray[...,2] = Normalize(vmin=2.,vmax=6,clip=True)(B)*256#Normalize(vmin=-3,vmax=0,clip=True)(np.log10(met/0.02))*256
 
     img = Image.fromarray(rgbArray)
 
-    img.show()
+    img.save(filename)
     
-    return bband,rband,kband
+    return rgbArray, R, G, B
+
 
 @pynbody.ramses.RamsesSnap.derived_quantity
 def temp(self) : 
     return (self['p']*pynbody.units.m_p/pynbody.units.k/self['rho']).in_units('K')
 
+@pynbody.ramses.RamsesSnap.derived_quantity
+def rhoz(self):
+    res = self['rho']*self['metal']
+    res.units = self['rho'].units
+    return res
+
+@pynbody.ramses.RamsesSnap.derived_quantity
+def rho_ovi(self) : 
+    return self['rhoz']*0.2*0.3/12.
 
 @pynbody.ramses.RamsesSnap.derived_quantity
 def tform(self) : 
-    from scipy.io.numpyio import fread
-
+    from numpy import fromfile
+    
     top = self
     while hasattr(top,'base') : top = self.base
 
@@ -407,12 +417,14 @@ def tform(self) :
             os.system("cd %s; mkdir birth; /home/itp/roskar/ramses/galaxy_formation/part2birth -inp output_%s; cd .."%(parent_dir,top._timestep_id))
             f = open('%s/birth/birth_%s.out%05d'%(parent_dir,top._timestep_id,i+1))
 
-        n = fread(f,1,'i')
-        n /= 8
-        ages = fread(f,n,'d')
-        new = np.where(ages > 0)[0]
-        top.s['tform'][done:done+len(new)] = ages[new]
-        done += len(new)
+        n = fromfile(f,'i',1)
+        if n > 0: 
+            n /= 8
+            ages = fromfile(f,'d',n)
+            new = np.where(ages > 0)[0]
+            top.s['tform'][done:done+len(new)] = ages[new]
+            done += len(new)
+
         f.close()
     top.s['tform'].units = 'Gyr'
 
