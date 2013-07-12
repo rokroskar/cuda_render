@@ -868,9 +868,9 @@ def compare_to_high_res(slr1, slr2, shr) :
     axs[0].set_ylabel('$\Sigma_{\star}$ [M$_{\odot}$/kpc]')
     axs[0].legend(frameon=False, prop = dict(size=12))
     axs[1].set_xlabel('$R/R_{\mathrm{d}}$ [kpc]')
-    axs[1].set_ylabel('$v_{circ}$')
+    axs[1].set_ylabel('$V_{\mathrm{circ}}$')
     axs[2].set_xlabel('$R/R_{\mathrm{d}}$ [kpc]')
-    axs[2].set_ylabel('$z_{rms}$')
+    axs[2].set_ylabel('$z_{\mathrm{rms}}$')
     axs[3].set_xlabel('$t$ [Gyr]')
     axs[3].set_ylabel('SFR [M$_{\odot}$/yr]')
     

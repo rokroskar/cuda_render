@@ -80,11 +80,11 @@ def load_hop(s):
 
     return data
 
-def hop_center(s):
+def hop_center(s,halo=0):
     data = load_hop(s)
 
-    cen = data.T[0][4:7]
-    vcen = data.T[0][7:10]
+    cen = data.T[halo][4:7]
+    vcen = data.T[halo][7:10]
     
     s['pos'] -= cen
     s['vel'] -= vcen
@@ -124,9 +124,9 @@ def make_comparison_figure(dirlist,names):
         axs[i].xaxis.set_ticklabels("")
 
     
-def load_center(output, align=True):
+def load_center(output, align=True, halo=0):
     s = pynbody.load(output)
-    hop_center(s)
+    hop_center(s,halo)
 #    s.physical_units()
     st = s[pynbody.filt.Sphere('100 kpc')]
     
@@ -206,7 +206,7 @@ def prepare_for_amiga(outname, write = False, run_pkdgrav = False, run_amiga=Fal
     print massunit
     
 
-    newfile = "%s_fullbox.tipsy"%outname
+    newfile = "%s_tipsy/%s_fullbox.tipsy"%(s.filename,outname)
 
     if write:
         s['mass'].convert_units('%f Msol'%massunit)
@@ -239,7 +239,7 @@ def spawn_pkdgrav(s, newfile, zbox = False) :
 
     f = open('%s.param'%newfile,'w')
         # determine units
-    f.write('dKpcUnit = %f\n'%l_unit.in_units('kpc'))
+    f.write('dKpcUnit = %f\n'%l_unit.in_units('kpc a', **s.conversion_context()))
     f.write('dMsolUnit = %e\n'%massunit)
     f.write('dOmega0 = %f\n'%s.properties['omegaM0'])
     f.write('dLambda = %f\n'%s.properties['omegaL0'])
@@ -307,14 +307,14 @@ def spawn_amiga(s, newfile, zbox = False) :
     f.write('Dvir = 200\n')
     f.write('MaxGatherRad = 1.0\n')
     f.write('[TIPSY]\n')
-    f.write('TIPSY_BOXSIZE = %e\n'%(s.properties['boxsize'].in_units('Mpc')*s.properties['h']))
+    f.write('TIPSY_BOXSIZE = %e\n'%(s.properties['boxsize'].in_units('Mpc')*s.properties['h']/s.properties['a']))
     f.write('TIPSY_MUNIT   = %e\n'%(massunit*s.properties['h']))
     f.write('TIPSY_OMEGA0  = %f\n'%s.properties['omegaM0'])
     f.write('TIPSY_LAMBDA0 = %f\n'%s.properties['omegaL0'])
     
     velunit = Unit('%f cm'%s._info['unit_l'])/Unit('%f s'%s._info['unit_t'])
     
-    f.write('TIPSY_VUNIT   = %e\n'%velunit.ratio('km s^-1'))
+    f.write('TIPSY_VUNIT   = %e\n'%velunit.ratio('km s^-1 a', **s.conversion_context()))
     
 
     # the thermal energy in K -> km^2/s^2
