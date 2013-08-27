@@ -387,7 +387,7 @@ def make_sfh_figure_singlepanel(slist,names,linewidths=None) :
     t,z,sfr = get_leitner_data('10.40')
     t2,z2,sfr2 = get_leitner_data('10.60')
 
-    ax.fill_between(pynbody.analysis.cosmology.age(slist[0],z),sfr,sfr2,alpha=.2,color='b',label='Leitner')
+    ax.fill_between(pynbody.analysis.cosmology.age(slist[0],z),sfr,sfr2,color='#C2C2FF',label='Leitner')
 
 
     for i, s in enumerate(slist) : 
@@ -434,7 +434,7 @@ def make_cummulative_mass(slist,names,kap_runs = None,linewidths=None) :
     t,z,sfr = get_leitner_data('10.40',False)
     t2,z2,sfr2 = get_leitner_data('10.60',False)
 
-    ax.fill_between(pynbody.analysis.cosmology.age(slist[0],z),sfr/1e10,sfr2/1e10,alpha=.2,color='b',label='Leitner')
+    ax.fill_between(pynbody.analysis.cosmology.age(slist[0],z),sfr/1e10,sfr2/1e10,zorder=-100,color='#C2C2FF',label='Leitner')
 
 
     for i, s in enumerate(slist[:3]) : 
@@ -457,7 +457,7 @@ def make_cummulative_mass(slist,names,kap_runs = None,linewidths=None) :
                 tform = sub.s['tform'].in_units('Gyr').view(np.ndarray)
             sfh,bins = np.histogram(tform,weights=masses/1e10,range=[0,13.76],bins=50)
             bins = .5*(bins[:-1]+bins[1:])
-            ax.plot(bins,np.cumsum(sfh), color = kappa_colors[i],linewidth=4,zorder=-100)
+            ax.plot(bins,np.cumsum(sfh), color = kappa_colors[i],zorder=-50,linewidth=4)
        
         # make the colorbar
 
@@ -721,9 +721,9 @@ def make_metallicity_profiles(sl,names,kappa_runs = None) :
         
     for ax in axs: ax.plot([175,175],[3,1e18],'r--')
 
-    axs[1].plot(obsrho,10**obsnovi,'o',markersize=8, label = 'Prochaska et al. 2011',alpha=.3)
-    axs[1].plot(tumrho,10**tumnovi,'s',markersize=8, label = 'Tumlinson et al. 2011',alpha=.3)
-    axs[1].plot(werk_rho[werk_ovi>0], 10**werk_ovi[werk_ovi>10], '*', markersize=8, label = 'Werk et al. 2013', alpha=.3)
+    axs[1].plot(obsrho,10**obsnovi,'o',markersize=8, color='#C2C2FF',label = 'Prochaska et al. 2011')
+    axs[1].plot(tumrho,10**tumnovi,'s',markersize=8, color='#C5FFC2',label = 'Tumlinson et al. 2011')
+    axs[1].plot(werk_rho[werk_ovi>0], 10**werk_ovi[werk_ovi>10], '*', markersize=8, color='#FFC2CC',label = 'Werk et al. 2013')
     axs[1].set_xlabel('Radius [kpc]')
     axs[0].set_xlabel('Radius [kpc]')
     axs[0].set_ylabel('log$_{10}$(T)')

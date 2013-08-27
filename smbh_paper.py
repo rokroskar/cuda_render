@@ -52,11 +52,11 @@ def make_r_z_figure(path):
 
     fig, axs = plt.subplots(2,1,figsize=(10,15))
 
-    axs[0].plot(orbit['t'], rs*1000.)
-#    plt.plot(orbit['t'], dr*1000.)
+ #   axs[0].plot(orbit['t'], rs*1000.)
+    axs[0].plot(orbit['t'], dr*1000.)
 
     axs[0].set_xlabel('$t$ [Myr]')
-    axs[0].set_ylabel('$R$ [pc]')
+    axs[0].set_ylabel('separation [pc]')
     axs[0].semilogy()
     axs[0].set_xlim(orbit['t'].min(), orbit['t'].max())
 

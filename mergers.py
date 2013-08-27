@@ -30,15 +30,32 @@ runlist_llmc = ['merge2Gyr_llmc_low',
                'merge5Gyr_llmc_low',
                'merge5Gyr_llmc_high']
 
+runlist_2Gyr = ['merge2Gyr_lmc_low',
+                'merge2Gyr_lmc_high',
+                'merge2Gyr_llmc_low',
+                'merge2Gyr_llmc_high']
+
+runlist_5Gyr = ['merge5Gyr_lmc_low',
+                'merge5Gyr_lmc_high',
+                'merge5Gyr_llmc_low',
+                'merge5Gyr_llmc_high']
+
 runlist_all = runlist_lmc + runlist_llmc
+
+def get_color(i,n,cmap = plt.cm.rainbow):
+    return cmap(int(i*256./n))
+
+colors_all = []
+for i in range(len(runlist_all)) :
+    colors_all.append(get_color(i,len(runlist_all)))
 
 lmc_titles = []
 for run in runlist_lmc : 
-    lmc_titles.append(run.replace('_','-'))
+    lmc_titles.append(run.replace('_','-')[5:])
 
 llmc_titles = []
 for run in runlist_llmc : 
-    llmc_titles.append(run.replace('_','-'))
+    llmc_titles.append(run.replace('_','-')[5:])
 
 titles_all = lmc_titles + llmc_titles
  
@@ -54,7 +71,7 @@ def satellite_orbit(parent_dir='./',plot=False, save=False) :
     import sys
     import parallel_util
 
-    filelist = glob.glob(parent_dir+'/[2,3,4,5,6,7,8]/*.00???')
+    filelist = glob.glob(parent_dir+'/[2,3,4,5,6,7,8]/*.00???.gz')
     filelist.sort()
 
     s = pynbody.load(filelist[0])
@@ -613,8 +630,6 @@ def merger_profile_evolution(list1,list2) :
 
 
 
-def get_color(i,n,cmap = plt.cm.rainbow):
-    return cmap(int(i*256./n))
 
 
 
@@ -668,3 +683,130 @@ def make_vert_sat_profiles(si,slist,titles) :
     ax.set_xlabel('$z$ [kpc]')
     ax.set_ylabel(r'$\rho$ [M$_{\odot}$ kpc$^{-3}$]')
     ax.legend(frameon=False,prop=dict(size=16))
+
+def make_combined_frames(dirlist,prefix) : 
+    import glob,utils
+    
+    fo = map(lambda x: np.sort(glob.glob(x+'/ppms/fo/*ppm')),dirlist)
+    eo = map(lambda x: np.sort(glob.glob(x+'/ppms/eo/*ppm')),dirlist)
+
+
+    plt.ioff()
+
+    
+
+    for i in range(1114,2000) : 
+        f,axs = plt.subplots(2,4,figsize=(20,10),dpi=80)
+        for j in range(len(dirlist)) : 
+            im_fo = plt.imread(fo[j][i])
+            im_eo = plt.imread(eo[j][i])
+            axs[0,j].imshow(im_fo,origin='lower')
+            axs[1,j].imshow(np.fliplr(im_eo),origin='lower')
+            axs[0,j].set_title(dirlist[j].replace('_','-'),color='white')
+        for ax in axs.flatten(): utils.clear_labels(ax,True)
+        plt.subplots_adjust(hspace=.1,wspace=.1)
+        f.savefig(prefix+'%d.png'%i,format='png',facecolor='black')
+        plt.close()
+    
+    plt.ion()
+
+
+def make_age_velocity_plots(si,slist) :
+    f,axs = plt.subplots(1,2,figsize=(12,5))
+    nosat = pynbody.filt.HighPass('mass',0.05)
+    sn = pynbody.filt.SolarNeighborhood(7,9,3)
+    prof = pynbody.analysis.profile.Profile(si.s[sn],calc_x=lambda x: x['age'],type='log',nbins=10,min=1)
+    for ax in axs:
+        ax.plot(prof['rbins'],prof['vr_disp'],color = 'k',label='isolated')
+        ax.plot(prof['rbins'],prof['vz_disp'],color = 'k',linestyle='--')
+
+    for i, s in enumerate(slist) :
+        prof = pynbody.analysis.profile.Profile(s.s[nosat&sn],calc_x=lambda x: x['age'],type='log',nbins=10,min=1)
+        ind = 0 if i < 4 else 1
+        axs[ind].plot(prof['rbins'],prof['vr_disp'],color = get_color(i,len(slist)),label=titles_all[i])
+        axs[ind].plot(prof['rbins'],prof['vz_disp'],color = get_color(i,len(slist)),linestyle='--')
+
+        
+    for ax in axs: 
+        ax.legend(frameon=False,prop=dict(size=11),loc='lower right')
+        ax.set_xlabel('Age [Gyr]')
+        ax.set_ylabel('$\sigma_r, \sigma_z$ [km/s]')
+        ax.set_ylim(0,80)
+
+
+def savefig(name, formats = ['eps','pdf']) : 
+    for fmt in formats :
+        plt.savefig('migration_paper/'+name+'.%s'%fmt,format=fmt,bbox_inches='tight')
+
+@parallel_util.interruptible
+def disp_single(a):
+    f,ind = a
+    s = pynbody.load(f)
+    pynbody.analysis.angmom.faceon(s)
+    return s.properties['time'].in_units('Gyr'), np.std(s.s[ind]['vz']), np.std(s.s[ind]['vr'])
+
+def get_z_disp(dir) : 
+    from pickle import dump
+    import glob
+    
+    flist = glob.glob(dir+'/*.00??[0,2,4,6,8].gz')
+    if len(flist) == 0 :
+        flist = glob.glob(dir+'/*.00??[0,2,4,6,8]')
+    flist.sort()
+    
+    time = np.zeros(len(flist))
+    sigz = np.zeros(len(flist))
+    sigr = np.zeros(len(flist))
+    
+    rfilt = pynbody.filt.BandPass('rxy',5,7)
+    nonsat = pynbody.filt.HighPass('mass',.05)
+
+    s = pynbody.load(flist[0])
+    pynbody.analysis.angmom.faceon(s)
+    ind = (rfilt&nonsat).where(s.s)[0]
+    
+    
+    res = parallel_util.run_parallel(disp_single,flist,[ind],16)
+    
+    t = np.zeros(len(flist))
+    sigr = np.zeros(len(flist))
+    sigz = np.zeros(len(flist))
+    
+    for i in range(len(res)) : t[i], sigz[i], sigr[i] = res[i]
+    
+#333    dump({'time':time,'sigz':sigz,'sigr':sigr}, open(dir+'/sigmas.dump','w'))
+    return t,sigz,sigr
+
+
+def make_sig_fig():
+    f,axs = plt.subplots(1,2,figsize=(12,5))
+
+    t2,sigz2,sigr2 = get_z_disp('iso/2')
+    t5,sigz5,sigr5 = get_z_disp('iso/5')
+    
+    axs[0].plot(t2,sigr2,color='k',label='isolated')
+    axs[0].plot(t2,sigz2,color='k',linestyle='--')
+    axs[1].plot(t5,sigr5,color='k',label='isolated')
+    axs[1].plot(t5,sigz5,color='k',linestyle='--')
+
+    for i,run in enumerate(runlist_2Gyr):
+        t,sigz,sigr = get_z_disp(run+'/2')
+        color = colors_all[i] if i < 2 else colors_all[i+2]
+        title = titles_all[i] if i < 2 else titles_all[i+2]
+        axs[0].plot(t,sigr,color=color,label=title)
+        axs[0].plot(t,sigz,color=color,linestyle='--')
+
+    for i,run in enumerate(runlist_5Gyr):
+        t,sigz,sigr = get_z_disp(run+'/5')
+        color = colors_all[i+2] if i < 2 else colors_all[i+4]
+        title = titles_all[i+2] if i < 2 else titles_all[i+4]
+        axs[1].plot(t,sigr,color=color,label=title)
+        axs[1].plot(t,sigz,color=color,linestyle='--')
+
+    for ax in axs: 
+        ax.set_xlabel('$t$ [Gyr]')
+        ax.set_ylabel('$\sigma_r, \sigma_z$ [km/s]')
+        ax.set_ylim(30,110)
+        ax.legend(frameon=False,prop=dict(size=11),loc='upper left')
+        
+        
