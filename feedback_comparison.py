@@ -879,7 +879,7 @@ def compare_to_high_res(slr1, slr2, shr) :
 
 
 def snrad() : 
-    plt.figure()
+    f,ax=plt.subplots()
 
     kappa_IR=1. # Draine dust opacity in cm^2/g
     parsec=3e18
@@ -890,22 +890,26 @@ def snrad() :
     fuv=1.-np.exp(-1000.*tau)
     Tsn=1e51/2e34/1.38e-16*1.66e-24
     Trad=1e53/2e34/1.38e-16*1.66e-24
-
-    plt.plot(n,Tsn*0.1*n_star/(n+0.1*n_star), 'k--', label = 'supernovae')
     
+    ax.plot(n,np.log10(Tsn*0.1*n_star/(n+0.1*n_star)/11604.506), 'k--', label = 'supernovae')
+    
+    def rad_temp(eta_rad, Trad, fuv, eta_sig, tau, n_star, n) : 
+        return eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star)
+
     eta_rad = 1.
     eta_sig = 1.
-    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
+    
+    ax.plot(n,np.log10(rad_temp(eta_rad,Trad,fuv,eta_sig,tau,n_star,n)/11604.506), 
              label='$\kappa_{\mathrm{IR}}=1 {\mathrm{~cm}}^2/{\mathrm{g}}$')
 
     eta_rad=1.0
     eta_sig=5.
-    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
+    ax.plot(n,np.log10(rad_temp(eta_rad,Trad,fuv,eta_sig,tau,n_star,n)/11604.506), 
              label='$\kappa_{\mathrm{IR}}=5 {\mathrm{~cm}}^2/{\mathrm{g}}$')
 
     eta_rad=1.
     eta_sig=25.
-    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
+    ax.plot(n,np.log10(rad_temp(eta_rad,Trad,fuv,eta_sig,tau,n_star,n)/11604.506), 
              label='$\kappa_{\mathrm{IR}}=25 {\mathrm{~cm}}^2/{\mathrm{g}}$')
 
 #    eta_rad=0.1
@@ -913,17 +917,40 @@ def snrad() :
 #    plt.plot(n,eta_rad*Trad*fuv*(1.-np.exp(-eta_sig*tau))*0.1*n_star/(n+0.1*n_star), 
 #             label='$\kappa_{\mathrm{IR}}=1 {\mathrm{~cm}}^2/{\mathrm{g}}$')
 
-    plt.plot([1e-4,1e4],[1e7,1e7], 'k:')
+    ax.plot([1e-4,1e4],[np.log10(2915.8),np.log10(2915.8)], 'k:')
 
-    plt.loglog()
+    ax.semilogx()
+    ax.set_ylim(1,6)
     
-    plt.xlabel('Hydrogen number density [amu/cm$^3$]')
-    plt.ylabel('Cell temperature [K]')
+    plt.legend(frameon=False,prop = dict(size=12))
 
-    plt.xlim(1e-4,1e4)
-    plt.ylim(1e6,1e10)
+    # adding the second axis
 
-    plt.legend(frameon=False)
+    ax2 = ax.twinx()
+
+    factor = 0.005219842 # convert from km^2/s^2 m_p mu -> eV
+
+    vels = np.array([100,200,400,800,1600,3200])
+    energies = vels**2*factor
+ 
+
+    ax2.set_yticks(np.log10(energies))
+    ax2.set_yticklabels(vels)
+    ax2.set_ylim(1,6)
+    
+#ax2.semilogy()
+#    ax2.plot([1e-4,1e4],[700,700], 'k:')
+    ax2.set_ylabel('turbulent velocity [km/s]')
+
+    ax.set_xlabel('Hydrogen number density [amu/cm$^3$]')
+    ax.set_ylabel('Cell energy [log$_{10}$(eV)]')
+    
+    
+    ax.set_xlim(1e-4,1e4)
+    
+#    plt.ylim(1e6,1e10)
+
+    
 
 
 def sb99(): 
