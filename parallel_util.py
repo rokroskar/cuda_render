@@ -104,3 +104,51 @@ def interruptible(func) :
             raise KeyboardInterruptError()
     return newfunc
 
+
+from IPython.parallel import Client
+
+class ParallelTipsySnap(pynbody.tipsy.TipsySnap) : 
+    def __init__(self, filename, **kwargs) : 
+        super(ParallelTipsySnap,self).__init__(filename,**kwargs)
+        rc = Client()
+        dview = rc[:]
+        nengines = len(rc)
+        
+        self.rc,self.dview,self.nengines = [rc,dview,nengines]
+
+        dview.execute('import pynbody')
+
+        # set up particle slices
+        
+        for engine, particle_ids in zip(rc,self._get_particle_ids()) : 
+            engine.push({'particle_ids':particle_ids, 'filename':filename})
+            engine.execute('s = pynbody.load(filename,take=particle_ids)')
+            
+    def _get_particle_ids(self) :
+        ng = len(self.g) / self.nengines
+        nd = len(self.d) / self.nengines
+        ns = len(self.s) / self.nengines
+        g_start = 0
+        d_start = 0
+        s_start = 0
+        
+        while True:
+            yield range(g_start,g_start+ng)+range(d_start,d_start+nd)+range(s_start,s_start+ns)
+            g_start+=ng
+            d_start+=nd
+            s_start+=ns
+
+            if (g_start > len(self.g)) & (d_start > len(self.d)) & (s_start > len(self.s)) : 
+                raise StopIteration
+
+            
+
+        
+    def __getitem__(self,i) : 
+        if isinstance(i,str) :
+            self.dview.execute("arr = s['%s']"%i)
+            res = pynbody.array.SimArray(self.dview['arr'])
+            if len(res.shape) == 3 : shape = (res.shape[0]*res.shape[1],res.shape[2])
+            else : shape = (res.shape[0]*res.shape[1])
+            return res.reshape(shape)
+        return super(ParallelTipsySnap,self).__getitem__(i)
