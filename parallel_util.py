@@ -135,6 +135,8 @@ class ParallelTipsySnap(pynbody.tipsy.TipsySnap) :
 
         super(ParallelTipsySnap,self).__init__(filename,**kwargs)
 
+        super(ParallelTipsySnap,self).__init__(filename,**kwargs)
+        
         # set up particle slices
         
         dview.scatter('rank',rc.ids,flatten=True)
