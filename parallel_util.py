@@ -109,7 +109,6 @@ from IPython.parallel import Client
 
 class ParallelTipsySnap(pynbody.tipsy.TipsySnap) : 
     def __init__(self, filename, **kwargs) : 
-        super(ParallelTipsySnap,self).__init__(filename,**kwargs)
         rc = Client()
         dview = rc[:]
         nengines = len(rc)
@@ -118,6 +117,8 @@ class ParallelTipsySnap(pynbody.tipsy.TipsySnap) :
 
         dview.execute('import pynbody')
 
+        super(ParallelTipsySnap,self).__init__(filename,**kwargs)
+        
         # set up particle slices
         
         for engine, particle_ids in zip(rc,self._get_particle_ids()) : 
