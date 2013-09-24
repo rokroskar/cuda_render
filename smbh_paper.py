@@ -7,7 +7,7 @@ import utils
 
 paper_times = [5010, 5025, 5040, 5080]
 
-after_merger = [5003,5004,5005,5006,5007]
+after_merger = [5003,5005,5007,5009,5011]
 
 def make_eo_fo_clumps_figure(s,h) : 
 
@@ -208,6 +208,23 @@ def make_morph_evol_figure(slist,width=1.0,overplot_bh = True) :
     
     plt.subplots_adjust(hspace=0.1)
 
+def make_ic_zoomin_figure(s): 
+    from utils import clear_labels
+
+    f, axs = plt.subplots(1,3,figsize=(9,3))
+    widths = ['50 kpc','10 kpc','1 kpc']
+
+    for width,ax in zip(widths,axs) : 
+        if width==widths[-1] :
+            s['pos'] -= s['pos'][smbh.bh_index(s)[0]]
+        pynbody.plot.image(s.g,width=width,subplot=ax,show_cbar=False,av_z=True,cmap=plt.cm.Greys_r,resolution=1000)
+        ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
+                        arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
+        ax.annotate(width, xy=(0.38,0.065), color ="white",fontsize='smaller', 
+                    xycoords = 'axes fraction')
+        
+        clear_labels(ax)
+
 def make_zoomin_figure_single(s) : 
     from utils import clear_labels
 
@@ -289,24 +306,23 @@ def central_profile_figure(slist):
 def central_vsigma(slist) : 
     d = pynbody.filt.Disc(1,.1)
 
-    fig, axs = plt.subplots(2,1, figsize=(8,12))
+    fig, axs = plt.subplots()#2,1, figsize=(8,12))
 
     for i, s in enumerate(slist) : 
-        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=50, type = 'log',min=.01,max=1)
-        ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.01,max=1)
+        pg = pynbody.analysis.profile.Profile(s.g[d], nbins=10, type = 'log',min=.01,max=1)
+        #ps = pynbody.analysis.profile.Profile(s.s[d], nbins=50, type = 'log',min=.01,max=1)
     
 
-        axs[0].plot(pg['rbins'].in_units('pc'),pg['speed']/pg['speed_disp'], label="t = %.0f"%s.properties['time'].in_units('Myr'))
-        axs[1].plot(ps['rbins'].in_units('pc'),ps['speed']/ps['speed_disp'])
+        axs.plot(pg['rbins'].in_units('pc'),pg['vt']/pg['vt_disp'], label="t = %.0f"%s.properties['time'].in_units('Myr'))
+        #axs[1].plot(ps['rbins'].in_units('pc'),ps['vt']/ps['vt_disp'])
 
 
-    for ax in axs: 
-        ax.semilogx()
-        ax.set_xlabel(r'R [pc]')
-        ax.set_ylabel(r'$v/\sigma$')
-    axs[0].legend()
-    axs[0].set_title('gas')
-    axs[1].set_title('stars')
+    axs.semilogx()
+    axs.set_xlabel(r'$R$ [pc]')
+    axs.set_ylabel(r'$v/\sigma$')
+    axs.legend()
+    #axs[0].set_title('gas')
+    #axs[1].set_title('stars')
     
 def central_vsigma_inclined(s,ax=None) : 
 
@@ -314,16 +330,17 @@ def central_vsigma_inclined(s,ax=None) :
     if ax is None:
         f,ax = plt.subplots()
 
-    for angle in [0,20,45,60,89]  : 
+    for angle in [0,20,45,60,89.9]  : 
         s.rotate_x(angle)
         s['absvz'] = np.abs(s['vz'])
-        p = pynbody.analysis.profile.InclinedProfile(s.g,angle,nbins=20,max=.5)
-        ax.plot(p['rbins'],p['absvz']/p['absvz_disp'],label='%s'%angle)
+        p = pynbody.analysis.profile.InclinedProfile(s.g,angle,nbins=10,max=1,min=.01,type='log')
+        ax.plot(p['rbins'].in_units('pc'),p['absvz']/p['absvz_disp'],label='%.0f'%angle)
         s.rotate_x(-angle)
         del(s['absvz'])
 
-    ax.set_xlabel('$R$ [kpc]')
-    ax.set_ylabel('$V/\sigma$')
+    ax.semilogx()
+    ax.set_xlabel('$R$ [pc]')
+    ax.set_ylabel('$v_{\mathrm{los}}/\sigma$')
     ax.legend(prop=dict(size=12))
 
 
@@ -693,3 +710,22 @@ def make_composite_filmstrip(sl,width) :
         
     for ax in axs: 
         utils.clear_labels(ax,True)
+
+def make_edgeon_faceon_map(s) : 
+    f, axs = plt.subplots(1,2,figsize=(17.7,6.125))
+    
+    axs = axs.flatten()
+    
+    pynbody.plot.image(s.g,width='500 pc', cmap=plt.cm.Greys_r, qty='rho', units='Msol pc^-2', subplot=axs[0], show_cbar=False,vmin=1.5,vmax=4.5)
+    #smbh.overplot_bh(s,axs[0])
+
+    s.rotate_x(90)
+    
+    pynbody.plot.image(s.g,width='500 pc', cmap=plt.cm.Greys_r, qty='rho', units='Msol pc^-2', subplot=axs[1], show_cbar=True,vmin=1.5,vmax=4.5)
+    #smbh.overplot_bh(s,axs[1])
+        
+#    for ax in axs: 
+#        ax.set_xlim(-.25,.25)
+#        ax.set_ylim(-.25,.25)
+        
+    plt.draw()

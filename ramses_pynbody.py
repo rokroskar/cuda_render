@@ -200,11 +200,24 @@ def prepare_for_amiga(outname, write = False, run_pkdgrav = False, run_amiga=Fal
 
     s = pynbody.load(outname)
     
-    massunit = (1.0/pynbody.units.G*
-                pynbody.units.Unit('%f cm'%s._info['unit_l'])**3/
-                pynbody.units.Unit('%f s'%s._info['unit_t'])**2).in_units('Msol')
-    print massunit
+    #massunit = (1.0/pynbody.units.G*
+    #            pynbody.units.Unit('%f cm'%s._info['unit_l'])**3/
+    #            pynbody.units.Unit('%f s'%s._info['unit_t'])**2).in_units('Msol')
+    #print massunit
     
+    # figure out the units starting with mass
+
+    cmtokpc = 3.2407793e-22
+    lenunit  = s._info['unit_l']/s.properties['a']*cmtokpc
+    massunit = pynbody.analysis.cosmology.rho_crit(s,z=0,unit='Msol kpc^-3')*lenunit**3
+    G_u = 4.4998712e-6 # G in kpc^3 / Msol / Gyr^2
+    timeunit = np.sqrt(1/G_u * lenunit**3/massunit)
+    
+    l_unit = Unit('%f kpc'%lenunit)
+    t_unit = Unit('%f Gyr'%timeunit)
+    v_unit = l_unit/t_unit
+   
+    print massunit, timeunit
 
     newfile = "%s_tipsy/%s_fullbox.tipsy"%(s.filename,outname)
 
@@ -212,9 +225,10 @@ def prepare_for_amiga(outname, write = False, run_pkdgrav = False, run_amiga=Fal
         s['mass'].convert_units('%f Msol'%massunit)
         s.g['temp']
         print s['mass']
-        s.s['tform'].convert_units('%f s'%s._info['unit_t'])
+        s.s['tform'].convert_units(t_unit)
         s.g['metals'] = s.g['metal']
-        s['pos']
+        s['pos'].convert_units(l_unit)
+        s['vel'].convert_units(v_unit)
         s['eps'] = s.g['smooth'].min()
         s['eps'].units = s['pos'].units
         del(s.g['metal'])
@@ -224,22 +238,20 @@ def prepare_for_amiga(outname, write = False, run_pkdgrav = False, run_amiga=Fal
         
         s.write(filename='%s'%newfile, fmt=pynbody.tipsy.TipsySnap, binary_aux_arrays = True)
 
-    if run_pkdgrav: spawn_pkdgrav(s,newfile,zbox)
-    if run_amiga : spawn_amiga(s,newfile,zbox)
+    if run_pkdgrav: spawn_pkdgrav(s,newfile,lenunit,massunit,timeunit,zbox)
+    if run_amiga : spawn_amiga(s,newfile,lenunit, massunit, timeunit, zbox)
 
-def spawn_pkdgrav(s, newfile, zbox = False) : 
+def spawn_pkdgrav(s, newfile, lenunit, massunit, timeunit, zbox = False) : 
     from pynbody.units import Unit, G
     import os
 
-    l_unit = Unit('%f cm'%s._info['unit_l'])
-    t_unit = Unit('%f s'%s._info['unit_t'])
+    l_unit = Unit('%f kpc'%lenunit)
+    t_unit = Unit('%f Gyr'%timeunit)
     v_unit = l_unit/t_unit
     
-    massunit = (1.0/G*l_unit**3/t_unit**2).in_units('Msol')
-
     f = open('%s.param'%newfile,'w')
         # determine units
-    f.write('dKpcUnit = %f\n'%l_unit.in_units('kpc a', **s.conversion_context()))
+    f.write('dKpcUnit = %f\n'%lenunit)
     f.write('dMsolUnit = %e\n'%massunit)
     f.write('dOmega0 = %f\n'%s.properties['omegaM0'])
     f.write('dLambda = %f\n'%s.properties['omegaL0'])
@@ -255,7 +267,7 @@ def spawn_pkdgrav(s, newfile, zbox = False) :
         f = open('%s.pkdgrav.zbox.sh'%newfile,'w')
         f.write('#!/bin/sh\n')
         f.write('#SBATCH -J zerosteps\n')
-        f.write('#SBATCH --ntasks=64 --exclusive\n')
+        f.write('#SBATCH --ntasks=32 \n')
         f.write('export PATH=/opt/mpi/mvapich2/1.9b/gcc/4.7.2/bin:/opt/gcc/4.7.2/bin:$PATH\n')
         f.write('export LD_LIBRARY_PATH=/opt/mpi/mvapich2/1.9b/gcc/4.7.2/lib:/opt/gcc/4.7.2/lib64:/opt/gcc/4.7.2/lib\n')
         f.write('srun /home/itp/roskar/bin/pkdgrav2_mpi +potout +accout +vstart +std +vdetails -n 0 -o %s -gas +overwrite -I %s %s.param\n'%(newfile,newfile,newfile))
@@ -268,7 +280,7 @@ def spawn_pkdgrav(s, newfile, zbox = False) :
         os.system('sbatch %s.pkdgrav.zbox.sh'%newfile)
 
     else : 
-        command = "~/bin/pkdgrav2_pthread -sz 10 +overwrite +potout +accout +vstart +std +vdetails -n 0 -o %s -I %s %s.param"%(newfile,newfile,newfile)
+        command = "~/bin/pkdgrav2_pthread -sz 16 +overwrite +potout +accout +vstart +std +vdetails -n 0 -o %s -I %s %s.param"%(newfile,newfile,newfile)
         print command
         os.system('rm .lockfile')
         os.system(command)
@@ -284,14 +296,14 @@ def organize(filename) :
     st['phi'] = st['pot']
     st['phi'].write(overwrite=True)
 
-def spawn_amiga(s, newfile, zbox = False) :
+def spawn_amiga(s, newfile, lenunit, massunit, timeunit, zbox = False) :
     from pynbody.units import Unit, G
     import os
-
-    massunit = massunit = (1.0/G*
-                           Unit('%f cm'%s._info['unit_l'])**3/
-                           Unit('%f s'%s._info['unit_t'])**2).in_units('Msol')
-
+    
+    l_unit = Unit('%f kpc'%lenunit)
+    t_unit = Unit('%f Gyr'%timeunit)
+    v_unit = l_unit/t_unit
+   
     f = open('%s.AHF.input'%newfile,'w')
     f.write('[AHF]\n')
     f.write('ic_filename = %s\n'%newfile)
@@ -312,9 +324,9 @@ def spawn_amiga(s, newfile, zbox = False) :
     f.write('TIPSY_OMEGA0  = %f\n'%s.properties['omegaM0'])
     f.write('TIPSY_LAMBDA0 = %f\n'%s.properties['omegaL0'])
     
-    velunit = Unit('%f cm'%s._info['unit_l'])/Unit('%f s'%s._info['unit_t'])
+ #   velunit = Unit('%f cm'%s._info['unit_l'])/Unit('%f s'%s._info['unit_t'])
     
-    f.write('TIPSY_VUNIT   = %e\n'%velunit.ratio('km s^-1 a', **s.conversion_context()))
+    f.write('TIPSY_VUNIT   = %e\n'%v_unit.ratio('km s^-1 a', **s.conversion_context()))
     
 
     # the thermal energy in K -> km^2/s^2
@@ -327,12 +339,12 @@ def spawn_amiga(s, newfile, zbox = False) :
         f.write('#SBATCH -J amiga\n')
         f.write('#SBATCH -N 1 -n 1 --cpus-per-task=16\n')
         f.write('export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK\n')
-        f.write('srun /home/itp/roskar/bin/amiga %s.AHF.input\n'%newfile)
+        f.write('srun /home/itp/roskar/bin/amiga_pthread_for_tipsyramses %s.AHF.input\n'%newfile)
         f.close()
         os.system('sbatch %s.zbox.sh'%newfile)
     else : 
-        os.environ['OMP_NUM_THREADS'] = '30'
-        os.system("~/bin/amiga %s.AHF.input"%newfile)
+        os.environ['OMP_NUM_THREADS'] = '16'
+        os.system("~/bin/amiga_pthread_for_tipsyramses %s.AHF.input"%newfile)
 
 def make_rgb_image(s,width,xsize=500,ysize=500,filename='test.png') : 
     from PIL import Image

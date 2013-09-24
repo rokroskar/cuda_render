@@ -289,4 +289,25 @@ def make_multiple_snapshot_images(slist,x2=100,vsmin=3.5,vsmax=10,vgmin=6.2,vgma
         
        # system("mogrify -median 2 composites/composite%.2fGyr.png"%age(s))
         
+    
+def get_halo_centers(h) : 
+    pos = pynbody.array.SimArray(np.zeros((len(h),3)),h.base['pos'].units)
+    vel = pynbody.array.SimArray(np.zeros((len(h),3)),h.base['vel'].units)
+
+    pos.sim = h.base
+    vel.sim = h.base
+
+    for i,halo in enumerate(h): 
+        pos[i] = pynbody.analysis.halo.center(halo,retcen=True,mode='ssc')
+        vel[i] = pynbody.analysis.halo.center_of_mass_velocity(halo)
+
+    return pos, vel
+
+    
+def plot_halo_v_r(pos,vel) : 
+    rs = np.sqrt((pos**2).sum(axis=1))
+    vs = np.sqrt((vel**2).sum(axis=1))
+
         
+    plt.plot(rs,vs,'.')
+

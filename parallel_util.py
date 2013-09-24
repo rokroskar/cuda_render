@@ -107,48 +107,71 @@ def interruptible(func) :
 
 from IPython.parallel import Client
 
+def get_particle_ids(rank,ncpu,gtot,dtot,stot): 
+    ng,nd,ns = [gtot/ncpu,dtot/ncpu,stot/ncpu]
+    g_start = ng*rank
+    d_start = nd*rank+gtot
+    s_start = ns*rank+gtot+dtot
+    
+    if rank == ncpu-1 : g_end, d_end, s_end = [gtot-1,dtot-1+gtot,stot-1+gtot+dtot]
+    else: g_end,d_end,s_end = [g_start+ng,d_start+nd,s_start+ns]
+
+    print g_start, g_end, d_start, d_end, s_start, s_end
+
+    g_ind = np.arange(g_start,g_end)
+    d_ind = np.arange(d_start,d_end)
+    s_ind = np.arange(s_start,s_end)
+
+    return np.append(np.append(g_ind,d_ind),s_ind)
+
 class ParallelTipsySnap(pynbody.tipsy.TipsySnap) : 
     def __init__(self, filename, **kwargs) : 
-        super(ParallelTipsySnap,self).__init__(filename,**kwargs)
         rc = Client()
         dview = rc[:]
         nengines = len(rc)
+        dview.execute('import pynbody')
         
         self.rc,self.dview,self.nengines = [rc,dview,nengines]
 
-        dview.execute('import pynbody')
+        super(ParallelTipsySnap,self).__init__(filename,**kwargs)
 
         # set up particle slices
         
-        for engine, particle_ids in zip(rc,self._get_particle_ids()) : 
-            engine.push({'particle_ids':particle_ids, 'filename':filename})
-            engine.execute('s = pynbody.load(filename,take=particle_ids)')
-            
-    def _get_particle_ids(self) :
-        ng = len(self.g) / self.nengines
-        nd = len(self.d) / self.nengines
-        ns = len(self.s) / self.nengines
-        g_start = 0
-        d_start = 0
-        s_start = 0
+        dview.scatter('rank',rc.ids,flatten=True)
+        dview.push({'get_particle_ids':get_particle_ids, 
+                    'ncpu': self.nengines,
+                    'gtot': len(self.g),
+                    'dtot': len(self.d),
+                    'stot': len(self.s),
+                    'filename':filename})
+
+        dview.execute('particle_ids = get_particle_ids(rank,ncpu,gtot,dtot,stot)')
+        dview.execute('s = pynbody.load(filename,take=particle_ids)',block=True)
         
-        while True:
-            yield range(g_start,g_start+ng)+range(d_start,d_start+nd)+range(s_start,s_start+ns)
-            g_start+=ng
-            d_start+=nd
-            s_start+=ns
-
-            if (g_start > len(self.g)) & (d_start > len(self.d)) & (s_start > len(self.s)) : 
-                raise StopIteration
-
-            
-
         
     def __getitem__(self,i) : 
-        if isinstance(i,str) :
-            self.dview.execute("arr = s['%s']"%i)
-            res = pynbody.array.SimArray(self.dview['arr'])
-            if len(res.shape) == 3 : shape = (res.shape[0]*res.shape[1],res.shape[2])
-            else : shape = (res.shape[0]*res.shape[1])
-            return res.reshape(shape)
-        return super(ParallelTipsySnap,self).__getitem__(i)
+        if isinstance(i,str) and not self.lazy_off:
+            self.dview.execute("arr = s['%s']; units = s['%s'].units"%(i,i))
+            units = self.rc[0].pull('units').get()
+            res = self.dview.gather('arr',block=True).view(pynbody.array.SimArray)
+            res.units = units
+            res._name = i
+            res.sim = self
+            return res
+            
+        else : 
+            return super(ParallelTipsySnap,self).__getitem__(i)
+
+
+class ParallelSimArray(pynbody.array.SimArray) : 
+    def sum(self, *args, **kwargs) : 
+        # create individual sums on each engine
+        self.sim.dview.push({'args':args,'kwargs':kwargs})
+        self.sim.dview.execute("res = np.ndarray.sum(s['%s'],*args,**kwargs)"%self.name)
+        x = self.sim.dview.gather('res',block=True)
+        if hasattr(x, 'units') and self.units is not None :
+            x.units = self.units
+        if hasattr(x, 'sim') and self.sim is not None :
+            x.sim = self.sim
+        return x
+
