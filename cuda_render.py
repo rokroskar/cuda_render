@@ -57,8 +57,7 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
     # set up the kernel values
     kernel_samples = np.arange(0,2.01,0.01)
     kernel_vals = kernel_func(kernel_samples,1.0)
-    print kernel_vals
-    ndraw = 1
+
     for i in xrange(Npart) : 
 
         x,y,z,h,qt = [double(xs[i]),double(ys[i]),double(zs[i]),double(hs[i]),double(qts[i]*mass[i]/rhos[i])]
@@ -111,21 +110,11 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
 
                         dxpix, dypix, dzpix = [x-xpixel,y-ypixel,z-zpixel]
                         d = distance(dxpix,dypix,dzpix)
-                        #import pdb; pdb.set_trace()
-                        if ndraw == 0 :
-                            print x_pix_start, y_pix_start, x_pix_stop, y_pix_stop
-                            print xpixel, ypixel, zpixel
-                            print x, y, z, d, d/h
-                            
+                                               
                         if (d/h < 2) : 
                             
                             kernel_val = kernel_vals[int32(d/(0.01*h))]/(h*h*h)
-                            if ndraw==0:
-                                print d,h,d/h,int32(d/(0.01*h)),kernel_val,kernel_vals
-                                ndraw+=1
                             image[xpix,ypix] += qt*kernel_val
-#                            print image[xpix,ypix]
-
 
     return image
 
