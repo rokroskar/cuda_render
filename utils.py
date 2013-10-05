@@ -58,7 +58,7 @@ def shrink_sphere(sim, r=None, shrink_factor = 0.7, min_particles = 100, verbose
 def get_r200(s,p) : 
     import pynbody
     
-    ind = np.where(p['rbins'] > 100)
+    ind = np.where(p['rbins'].in_units('kpc') > 100)
 
     den = (p['mass_enc']/(4./3.*np.pi*p['rbins']**3))[ind]
     den /= pynbody.analysis.cosmology.rho_crit(s,unit=den.units)

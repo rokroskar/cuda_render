@@ -25,7 +25,7 @@ def bh_index(sim) :
 
 
 def overplot_bh(sim,ax):
-    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'kx', ms=5)
+    ax.plot(sim[bh_index(sim)]['x'],sim[bh_index(sim)]['y'], 'yx', ms=5)
     
 
 def plot_jeansratio(sim):
@@ -70,7 +70,7 @@ def smbh_orbits(dir = './', output=False, processes = 5, test=False):
 
     if dir[-1] != '/' : dir += '/'
 
-    flist = glob.glob(dir+'*/*.0????')
+    flist = glob.glob('?/*.0????')
     flist.sort(key=lambda x: x[-5:])
 
     print flist[:10]

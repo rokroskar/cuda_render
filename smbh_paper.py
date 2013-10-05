@@ -7,7 +7,7 @@ import utils
 
 paper_times = [5010, 5025, 5040, 5080]
 
-after_merger = [5003,5005,5007,5009,5011]
+after_merger = [5001,5003,5005,5009]
 
 def make_eo_fo_clumps_figure(s,h) : 
 
@@ -96,14 +96,14 @@ def load_snapshot_sequence(dir='./', ntiles = 20, t1 = None, t2 = None):
     return [pynbody.load(x) for x in map(smbh.nearest_output, times)]
     
 
-def center_snapshot(s, align=True) : 
+def center_snapshot(s, align=True, disk_size = '100 pc') : 
     if np.diff(s[smbh.bh_index(s)]['r'])[0] > 0.2 : 
             pynbody.analysis.halo.center(s,mode='ind',ind=smbh.bh_index(s),vel=False)
     else:
         pynbody.analysis.halo.center(s.g,mode='hyb',vel=False)
 
     pynbody.analysis.halo.vel_center(s.g,cen_size=.5)
-    if align: pynbody.analysis.angmom.faceon(s.g,disk_size='100 pc', cen=[0,0,0])
+    if align: pynbody.analysis.angmom.faceon(s.g,disk_size=disk_size, cen=[0,0,0])
 
 
 
@@ -113,7 +113,7 @@ def make_filmstrip_figure(slist):
 
     cmap = plt.cm.Greys_r
     
-    width = .25
+    width = .5
 
     for i,s in enumerate(slist) : 
         ax = axs.flatten()[i*2]
@@ -122,20 +122,20 @@ def make_filmstrip_figure(slist):
         ax.annotate('$t = %0.0f$ Myr'%(s.properties['time'].in_units('Myr')), 
                      (0.1,0.85), color='white', fontweight='bold', 
                      xycoords = 'axes fraction', fontsize=12)
-        #smbh.overplot_bh(s,ax)
+        smbh.overplot_bh(s,ax)
         ax.set_xlim(-width/2.0,width/2.0)
         ax.set_ylim(-width/2.0,width/2.0)
 
         if i == 0: 
             ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
                         arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
-            ax.annotate("250 pc", xy=(0.38,0.065), color ="white",fontsize='smaller', 
+            ax.annotate("500 pc", xy=(0.38,0.065), color ="white",fontsize='smaller', 
                         xycoords = 'axes fraction')
 
         ax = axs.flatten()[i*2+1]
         s.rotate_x(90)
         pynbody.plot.image(s.g,width=width,units='Msol kpc^-2', subplot=ax, show_cbar=False, cmap=cmap, approximate_fast=False, threaded=10, vmin=8,vmax=12)
-#        smbh.overplot_bh(s,ax)
+        smbh.overplot_bh(s,ax)
         ax.set_xlim(-width/2.0,width/2.0)
         ax.set_ylim(-width/2.0,width/2.0)
         s.rotate_x(-90)
@@ -491,9 +491,23 @@ def phaseplot_spaans(s, tablefile=None) :
     plt.plot(table[:,0],table[:,1],table[:,0],table[:,2],linewidth=2)
 
 def make_jeansmass_figure(s) :
-    
-    pass
+    from scipy.stats import gaussian_kde as kde
+    if 'p' not in s.g.keys() : 
+        s.g['p'] = s.g['pres']
+        s.g['p'].set_units_like('Pa')
 
+
+    fig, ax = plt.subplots()#2,1, figsize=(8,12))
+
+        
+    x = np.linspace(0,12,200)
+    k = kde(np.log10(s.g['mjeans'].in_units('Msol')/s.g['mass'].in_units('Msol')))
+    k2 = kde(np.log10(s.g['ljeans'].in_units('kpc')/s.g['smooth'].in_units('kpc')))
+    ax.plot(x,k(x),'k')
+    ax.set_xlabel(r'$\mathrm{log}_{10}(M_{jeans} / M_{part})$')
+    #axs[1].plot(x,k2(x),'k')
+    #axs[1].set_xlabel(r'$\mathrm{log}(M_{jeans} / M_{part})$')
+    
 def make_sfr_figure(s) : 
     f,axs = plt.subplots(3,1)
 
@@ -701,7 +715,7 @@ def make_composite_filmstrip(sl,width) :
         if i == 0: 
             ax.annotate("", xy=(0.01,0.05),xytext=(0.99,0.05), xycoords='axes fraction',
                         arrowprops=dict(arrowstyle='<->',color='white',linewidth=2))
-            ax.annotate("250 pc", xy=(0.38,0.065), color ="white",fontsize='smaller', 
+            ax.annotate("500 pc", xy=(0.38,0.065), color ="white",fontsize='smaller', 
                         xycoords = 'axes fraction')
 
 
@@ -729,3 +743,21 @@ def make_edgeon_faceon_map(s) :
 #        ax.set_ylim(-.25,.25)
         
     plt.draw()
+
+
+def make_general_orbit_plot() :
+    dat = np.load('../gas_merger0.1_thr10_Rx8_highSFthresh/bh_orbit.npz')
+    dat2 = np.load('./bh_orbit.npz')
+
+    ind = np.where(dat['t'] < dat2['t'][0])[0]
+
+    plt.figure(figsize=(20,6))
+
+    plt.plot(dat['t'][ind],dat['r'][ind]*1e3,'k')
+    plt.plot(dat2['t'],dat2['r']*1e3,'k')
+    plt.plot((dat2['t'][0],dat2['t'][0]),(1e-1,1e4),'r--',linewidth=3,zorder=-500)
+    plt.xlabel('$t$ [Myr]')
+    plt.ylabel('separation [pc]')
+    plt.xlim(dat['t'][0],dat2['t'][-1])
+    
+    plt.semilogy()
