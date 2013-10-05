@@ -3,8 +3,8 @@ Attempt to implement a CUDA-based SPH renderer
 """
 
 
-#from numbapro import vectorize, cuda
-from numba import autojit, jit, double, int32 
+from numbapro import vectorize
+from numba import autojit, jit, double, int32
 from numbapro import prange
 import numpy as np
 import pynbody
@@ -12,7 +12,7 @@ import scipy.integrate as integrate
 #from numpy import int32  
 
 #@jit('double(double,double)')
-@autojit
+@vectorize([double(double,double)])
 def kernel_func(d, h) : 
     if d < 1 : 
         f = 1.-(3./2)*d**2 + (3./4.)*d**3
@@ -35,7 +35,7 @@ def distance(x,y,z) :
 def physical_to_pixel(xpos,xmin,dx) : 
     return int32((xpos-xmin)/dx)
 
-@jit('double(int32,int32,double)')
+#@jit('double(double,double,double)')
 def pixel_to_physical(xpix,x_start,dx) : 
     return dx*xpix+x_start
 
@@ -56,18 +56,21 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
 
     # set up the kernel values
     kernel_samples = np.arange(0,2.01,0.01)
-    kernel_vals = np.array([kernel_func(x,1.0) for x in kernel_samples],dtype=np.float)
-
+    kernel_vals = kernel_func(kernel_samples,1.0)
+    print kernel_vals
+    ndraw = 1
     for i in xrange(Npart) : 
 
         x,y,z,h,qt = [double(xs[i]),double(ys[i]),double(zs[i]),double(hs[i]),double(qts[i]*mass[i]/rhos[i])]
+
+        if h < dx*0.55 : h = dx*0.55
 
         # is the particle in the frame?
         if ((x > xmin-2*h) & (x < xmax+2*h) & 
             (y > ymin-2*h) & (y < ymax+2*h) & 
             (np.abs(z-zplane) < 2*h)) : 
         
-                    
+            
             if (MAX_D_OVER_H*h/dx < 1 ) & (MAX_D_OVER_H*h/dy < 1) : 
                 # pixel coordinates 
                 xpos = physical_to_pixel(x,xmin,dx)
@@ -96,7 +99,8 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                 if(y_pix_start < 0):  y_pix_start = 0
                 if(y_pix_stop  > ny): y_pix_stop  = int32(ny-1)
     
-                
+
+
                 for xpix in range(x_pix_start, x_pix_stop) : 
                     for ypix in range(y_pix_start, y_pix_stop) : 
                         # physical coordinates of pixel
@@ -104,12 +108,24 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                         ypixel = pixel_to_physical(ypix,y_start,dy)
                         zpixel = zplane
 
+
                         dxpix, dypix, dzpix = [x-xpixel,y-ypixel,z-zpixel]
                         d = distance(dxpix,dypix,dzpix)
+                        #import pdb; pdb.set_trace()
+                        if ndraw == 0 :
+                            print x_pix_start, y_pix_start, x_pix_stop, y_pix_stop
+                            print xpixel, ypixel, zpixel
+                            print x, y, z, d, d/h
+                            
                         if (d/h < 2) : 
-                            kernel_val = kernel_vals[int(d/(0.01*h))]/(h*h*h)
+                            
+                            kernel_val = kernel_vals[int32(d/(0.01*h))]/(h*h*h)
+                            if ndraw==0:
+                                print d,h,d/h,int32(d/(0.01*h)),kernel_val,kernel_vals
+                                ndraw+=1
                             image[xpix,ypix] += qt*kernel_val
-    
+#                            print image[xpix,ypix]
+
 
     return image
 
