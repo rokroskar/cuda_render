@@ -9,6 +9,7 @@ from numbapro import prange
 import numpy as np
 import pynbody
 import scipy.integrate as integrate
+import math
 
 @vectorize([double(double,double)])
 def kernel_func(d, h) : 
@@ -21,22 +22,15 @@ def kernel_func(d, h) :
         
     return f/(np.pi*h**3)
 
-#@autojit
-#def _2D_kernel_func(d, h) : 
-#    return 2*integrate.quad(lambda z : kernel_func(np.sqrt(z**2 + d**2),h),0,h)[0]
+@autojit
+def _2D_kernel_func(d, h) : 
+    return 2*integrate.quad(lambda z : kernel_func(np.sqrt(z**2 + d**2),h),0,h)[0]
 
-#@jit('double(double,double,double)')
-@autojit(nopython=True)
-def distance(x,y,z) : 
-    return np.sqrt(x**2+y**2+z**2)
-
-#@jit('int32(double,double,double)')
-@autojit(nopython=True)
+@jit('int32(double,double,double)',nopython=True)
 def physical_to_pixel(xpos,xmin,dx) : 
     return int32((xpos-xmin)/dx)
 
-#@jit('double(int32,double,double)')
-@autojit(nopython=True)
+@jit('double(int32,double,double)',nopython=True)
 def pixel_to_physical(xpix,x_start,dx) : 
     return dx*xpix+x_start
 
@@ -52,7 +46,7 @@ def render_using_single_particle(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,
 
     for i in xrange(Npart) : 
         x,y,z,h,qt = [double(xs[i]),double(ys[i]),double(zs[i]),double(hs[i]),double(qts[i]*mass[i]/rhos[i])]
-      #  render_single_particle(x,y,z,h,qt,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals)
+        render_single_particle(x,y,z,h,qt,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals)
     
     return image
 
@@ -133,6 +127,7 @@ def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
     x_start = xmin+dx/2
     y_start = ymin+dy/2
     zplane = 0.0
+    zpixel = zplane
 
     # set up the kernel values
     kernel_samples = np.arange(0,2.01,0.01,dtype=np.float)
@@ -149,6 +144,10 @@ def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
 
             if h < dx*0.55 : h = dx*0.55        
             
+            h3 = 1./(h*h*h)
+            hsq = h*h
+            h1 = 1./(.01*h)
+
             if (MAX_D_OVER_H*h/dx < 1 ) and (MAX_D_OVER_H*h/dy < 1) : 
                 # pixel coordinates 
                 xpos = int32(physical_to_pixel(x,xmin,dx))
@@ -156,13 +155,12 @@ def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                 # physical coordinates of pixel
                 xpixel = pixel_to_physical(xpos,x_start,dx)
                 ypixel = pixel_to_physical(ypos,y_start,dy)
-                zpixel = zplane
 
                 dxpix, dypix, dzpix = [x-xpixel,y-ypixel,z-zpixel]
-                d = distance(dxpix,dypix,dzpix)
-                if (xpos > 0) and (xpos < nx) and (ypos > 0) and (ypos < ny) and (d/h < 2) : 
-                    kernel_val = kernel_vals[int32(d/(0.01*h))]/(h*h*h)
-                    image[xpos,ypos] += qt*kernel_val
+                dsq = dxpix*dxpix + dypix*dypix + dzpix*dzpix 
+
+                if (xpos > 0) and (xpos < nx) and (ypos > 0) and (ypos < ny) and (dsq/hsq < 4) : 
+                    image[ypos,xpos] += qt*kernel_vals[int32(np.sqrt(dsq)*h1)]*h3
 
             else :
                 # bottom left of pixels the particle will contribute to
@@ -176,31 +174,24 @@ def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                 if(x_pix_stop  > nx): x_pix_stop  = int32(nx-1)
                 if(y_pix_start < 0):  y_pix_start = 0
                 if(y_pix_stop  > ny): y_pix_stop  = int32(ny-1)
-    
-
-                h3 = h*h*h
-                for xpix in range(x_pix_start, x_pix_stop) : 
-                    xpixel = pixel_to_physical(xpix,x_start,dx)
-                    zpixel = zplane
-
-                    for ypix in range(y_pix_start, y_pix_stop) : 
+                
+                for xpos in range(x_pix_start, x_pix_stop) :
+                    # physical coordinates of pixel
+                    xpixel = pixel_to_physical(xpos,x_start,dx)
+                    
+                    for ypos in range(y_pix_start, y_pix_stop) : 
                         # physical coordinates of pixel
-                        ypixel = pixel_to_physical(ypix,y_start,dy)
+                        ypixel = pixel_to_physical(ypos,y_start,dy)
                         dxpix, dypix, dzpix = [x-xpixel,y-ypixel,z-zpixel]
-                        d = distance(dxpix,dypix,dzpix)
-                                               
-                        if d/h < 2 : 
-                            image[xpix,ypix] += qt*kernel_vals[int32(d/(0.01*h))]/(h3)
-
+                        dsq = dxpix*dxpix+dypix*dypix+dzpix*dzpix
+                        
+                        if dsq/hsq < 4 : 
+                            image[ypos,xpos] +=qt*kernel_vals[int32(np.sqrt(dsq)*h1)]*h3
+                                                              
     return image
 
 def start_image_render(s,nx,ny,xmin,xmax) : 
-    # generate the rho and smooth arrays
-    s['smooth']
-    s['rho']
-
     xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth','rho','mass','rho']]
-    
     return render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
 
 def try_image_render() : 
@@ -209,7 +200,5 @@ def try_image_render() :
     xmin=0
     xmax=1
     
-    #fast_render = jit('double[:,:](double[:],double[:],double[:],double[:],double[:],double[:],double[:],int32,int32,double,double,double,double)')(render_image)
+    render_image_serial(x,y,z,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
     
-    render_image(x,y,z,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
-    #return fast_render(x,y,z,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
