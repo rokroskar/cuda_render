@@ -26,6 +26,10 @@ def kernel_func(d, h) :
 def _2D_kernel_func(d, h) : 
     return 2*integrate.quad(lambda z : kernel_func(np.sqrt(z**2 + d**2),h),0,h)[0]
 
+@autojit
+def distance(x,y,z) :
+    return np.sqrt(x*x+y*y+z*z)
+
 @jit('int32(double,double,double)',nopython=True)
 def physical_to_pixel(xpos,xmin,dx) : 
     return int32((xpos-xmin)/dx)
@@ -44,9 +48,9 @@ def render_using_single_particle(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,
     kernel_samples = np.arange(0,2.01,0.01,dtype=np.float)
     kernel_vals = kernel_func(kernel_samples,1.0)
 
-    for i in xrange(Npart) : 
-        x,y,z,h,qt = [double(xs[i]),double(ys[i]),double(zs[i]),double(hs[i]),double(qts[i]*mass[i]/rhos[i])]
-        render_single_particle(x,y,z,h,qt,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals)
+ #   for i in xrange(Npart) : 
+  #      x,y,z,h,qt = [double(xs[i]),double(ys[i]),double(zs[i]),double(hs[i]),double(qts[i]*mass[i]/rhos[i])]
+#        render_single_particle(x,y,z,h,qt,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals)
     
     return image
 
@@ -114,7 +118,7 @@ def render_single_particle(x,y,z,h,qt,nx,ny,xmin,xmax,ymin,ymax,image,kernel_val
                         image[xpix,ypix] += qt*kernel_val
 
 @jit(double[:,:](double[:],double[:],double[:],double[:],double[:],double[:],double[:],int32,int32,double,double,double,double))
-def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) : 
+def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) : 
     MAX_D_OVER_H = 2.0
 
     image = np.zeros((nx,ny))
@@ -134,7 +138,6 @@ def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
     kernel_vals = kernel_func(kernel_samples,1.0)
 
     for i in xrange(Npart) : 
-
         x,y,z,h,qt = [double(xs[i]),double(ys[i]),double(zs[i]),double(hs[i]),double(qts[i]*mass[i]/rhos[i])]
 
         # is the particle in the frame?
@@ -175,11 +178,11 @@ def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                 if(y_pix_start < 0):  y_pix_start = 0
                 if(y_pix_stop  > ny): y_pix_stop  = int32(ny-1)
                 
-                for xpos in range(x_pix_start, x_pix_stop) :
+                for xpos in xrange(x_pix_start, x_pix_stop) :
                     # physical coordinates of pixel
                     xpixel = pixel_to_physical(xpos,x_start,dx)
                     
-                    for ypos in range(y_pix_start, y_pix_stop) : 
+                    for ypos in xrange(y_pix_start, y_pix_stop) : 
                         # physical coordinates of pixel
                         ypixel = pixel_to_physical(ypos,y_start,dy)
                         dxpix, dypix, dzpix = [x-xpixel,y-ypixel,z-zpixel]
@@ -192,7 +195,7 @@ def render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
 
 def start_image_render(s,nx,ny,xmin,xmax) : 
     xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth','rho','mass','rho']]
-    return render_image_serial(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
+    return render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
 
 def try_image_render() : 
     x=y=z=hs=qts=mass=rhos= np.random.rand(100)
@@ -202,3 +205,26 @@ def try_image_render() :
     
     render_image_serial(x,y,z,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
     
+
+import numbapro
+
+@autojit
+def privatization_rules():
+    reduction = 1.0
+    private = 2.0
+    shared = 3.0
+    for i in numbapro.prange(10):
+        reduction += i      # The inplace operator specifies a sum reduction
+        reduction -= 1
+        reduction *= 4      # ERROR: inconsistent reduction operator!
+                            # '*' is a product reduction, not a sum reduction
+        print 'reduction', reduction, i 
+
+        print private       # ERROR: private is not yet initialized!
+        private = i * 4.0   # This assignment makes it private
+        print private       # Private is available now, this is fine
+
+        print shared        # This variable is only ever read, so it's shared
+
+    print 'reduction = ', reduction         # prints the sum-reduced value
+    print 'private = ', private           # prints the last value, i.e. 99 * 4.0
