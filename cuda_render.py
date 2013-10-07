@@ -2,8 +2,8 @@
 Attempt to implement a CUDA-based SPH renderer
 """
 
-
-from numbapro import vectorize
+import numba
+from numbapro import vectorize, cuda
 from numba import autojit, jit, double, int32, void
 from numbapro import prange
 import numpy as np
@@ -38,7 +38,7 @@ def physical_to_pixel(xpos,xmin,dx) :
 def pixel_to_physical(xpix,x_start,dx) : 
     return dx*xpix+x_start
 
-@jit(double[:,:](double[:],double[:],double[:],double[:],double[:],double[:],double[:],int32,int32,double,double,double,double))
+#@jit(double[:,:](double[:],double[:],double[:],double[:],double[:],double[:],double[:],int32,int32,double,double,double,double))
 def render_using_single_particle(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) : 
     Npart = len(xs)
 
@@ -54,7 +54,7 @@ def render_using_single_particle(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,
     
     return image
 
-@jit(void(double,double,double,double,double,int32,int32,double,double,double,double,double[:,:],double[:]))
+#@jit(void(double,double,double,double,double,int32,int32,double,double,double,double,double[:,:],double[:]))
 def render_single_particle(x,y,z,h,qt,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals) :
     MAX_D_OVER_H = 2.0
 
@@ -193,6 +193,92 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                                                               
     return image
 
+@cuda.jit(void(double[:,:,:],                           # positions
+               double[:],double[:],double[:],double[:], # hs, qts, mass, rhos
+               int32,int32,double,double,double,double, # nx, ny, xmin, xmax, ymin, ymax
+               double[:,:],                             # image
+               double[:]))                              # kernel_vals
+def render_image_cuda(pos,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals) : 
+    MAX_D_OVER_H = 2.0
+
+    Npart = pos.shape[0]
+
+    dx = (xmax-xmin)/nx
+    dy = (ymax-ymin)/ny
+
+    x_start = xmin+dx/2.
+    y_start = ymin+dy/2.
+    zplane = 0.0
+    zpixel = zplane
+        
+    # thread ID
+    i = cuda.grid(1)
+    
+    # which set of particles should this thread work on?
+    part_per_thread = int32(Npart/cuda.blockDim.x)
+    my_parts = part_per_thread
+
+    # if this is the last thread, pick up the slack
+    if i == cuda.blockDim.x : my_parts = (Npart-part_per_thread*cuda.blockDim.x) + part_per_thread
+    shared = cuda.shared.array(shape=(10),dtype=double)
+
+    cuda.syncthreads()
+
+    shared[0] += 1.0
+
+    cuda.syncthreads()
+
+    image[0,0] = shared[0]
+
+
+@cuda.jit(void(numba.int32[:]))
+def sum_cu(x) :
+    shm = cuda.shared.array(shape=(1),dtype=numba.int32)
+    cuda.atomic.add(shm,0,1)
+    cuda.syncthreads()
+#    if cuda.threadIdx.x == 0 : x[cuda.blockIdx.x] = shm[0]
+    cuda.atomic.add(x,0,1)
+    
+def sum_test() :
+    Nblocks  = 32
+    Nthreads = 1024
+    
+    x = np.zeros((Nblocks),dtype=np.int)
+    d_x = cuda.to_device(x)
+    sum_cu[Nblocks,Nthreads](d_x)
+    d_x.to_host()
+    return x
+
+def start_cuda_image_render(s,nx,ny,xmin,xmax,qty='rho') : 
+    pos,hs,qts,mass,rhos = [s[arr] for arr in ['pos','smooth',qty,'mass','rho']]
+    
+    stream = cuda.stream()
+
+    # send everything to device
+    d_pos = cuda.to_device(pos,stream=stream)
+    d_hs = cuda.to_device(hs,stream=stream)
+    d_qts = cuda.to_device(qts,stream=stream)
+    d_mass = cuda.to_device(mass,stream=stream)
+    d_rhos = cuda.to_device(rhos,stream=stream)
+
+    # set up the image array and send it to device
+    image = np.zeros((nx,ny),dtype=float)
+    d_image = cuda.to_device(image,stream=stream)
+    
+    # set up the kernel values and send them to device
+    kernel_samples = np.arange(0,2.01,0.01,dtype=np.float)
+    kernel_vals = kernel_func(kernel_samples,1.0)
+    d_kernel_vals = cuda.to_device(kernel_vals,stream=stream)
+    
+    griddim = 1
+    blockdim = 32
+    render_image_cuda[griddim,blockdim](d_pos,d_hs,d_qts,d_mass,d_rhos,nx,ny,xmin,xmax,xmin,xmax,d_image,d_kernel_vals)
+    
+    d_image.to_host()
+
+
+    return image
+
 def start_image_render(s,nx,ny,xmin,xmax) : 
     xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth','rho','mass','rho']]
     return render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
@@ -204,7 +290,6 @@ def try_image_render() :
     xmax=1
     
     render_image_serial(x,y,z,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
-    
 
 import numbapro
 
@@ -228,3 +313,4 @@ def privatization_rules():
 
     print 'reduction = ', reduction         # prints the sum-reduced value
     print 'private = ', private           # prints the last value, i.e. 99 * 4.0
+
