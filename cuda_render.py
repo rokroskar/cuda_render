@@ -301,11 +301,36 @@ def cu_template_kernel(pos,hs,qts,Ns,minmax,image,kernel) :
                                                         ker_upper:ker_lower]*qt/(h*h*h)
 
 def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug = False):
-    pass
+    from bisect import bisect
+    zplane = 0.0
+
+    image,dx,dy,ts,ds=setup_template_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug)
+    
+    # trim particles based on image limits
+    ind = np.where((xs > xmin-2*hs) & (xs < xmax+2*hs) & 
+                   (ys > ymin-2*hs) & (ys < ymax+2*hs) & 
+                   (np.abs(zs-zplane) < 2*hs))[0]
+    xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
+
+    # ---------------------------------------------------------------
+    # calculate which template ('k') should be used for each particle
+    # and sort particles by k
+    # ---------------------------------------------------------------
+
+    max_d = 2.0*hs
+    dbin = np.digitize(max_d,ds)-1
+    dbin_sortind = dbin.argsort()
+    dbin_sorted = dbin[dbin_sortind]
+
+
+    # set the render quantity 
+    qts = qts*mass/rhos
+
+
 
 def setup_template_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug = False):
-        from bisect import bisect
-    
+    from bisect import bisect
+        
     # ----------------
     # image parameters
     # ----------------
@@ -337,76 +362,24 @@ def setup_template_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, de
     del(ds)
     ds = []
     
-    for t in ts : 
+    for i,t in enumerate(ts) : 
         t = calculate_distance(t,dx,dy,0.0)
         # store the max distance
         ds.append(t.max())
         # normalize and apply kernel function
-        t = kernel_func(t/t.max()*2.0,1.0)
+        ts[i] = kernel_func(t/t.max()*2.0,1.0)
 
     ds = np.array(ds)
     
-    # trim particles based on image limits
-    ind = np.where((xs > xmin-2*hs) & (xs < xmax+2*hs) & 
-                   (ys > ymin-2*hs) & (ys < ymax+2*hs) & 
-                   (np.abs(zs-zplane) < 2*hs))[0]
-    xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
-
-    # ---------------------------------------------------------------
-    # calculate which template ('k') should be used for each particle
-    # and sort particles by k
-    # ---------------------------------------------------------------
-
-    max_d = 2.0*hs
-    dbin = np.digitize(max_d,ds)-1
-    dbin_sortind = dbin.argsort()
-    dbin_sorted = dbin[dbin_sortind]
     
-    return image, dx, dy, ts, ds, dbin, dbin_sortind, dbin_sorted
+    return image, dx, dy, ts, ds
 
 
 def template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug = False):
     from bisect import bisect
-    
-    # ----------------
-    # image parameters
-    # ----------------
-
-    MAX_D_OVER_H = 2.0
-
-    image = np.zeros((nx,ny))
-
-    Npart = len(xs)
-
-    dx = (xmax-xmin)/nx
-    dy = (ymax-ymin)/ny
-    
     zplane = 0.0
-    
-    # -----------------------------------------------------
-    # load or generate a template library and an array of
-    # max. physical distance corresponding to each template
-    # -----------------------------------------------------
 
-    try : 
-        dat = np.load('image_templates.npz')
-        ts = dat['ts']
-        ds = dat['ds']
-    except IOError : 
-        'Templates not found -- generating a new set'
-        ts, ds = generate_template_set(5000)
-    
-    del(ds)
-    ds = []
-    
-    for t in ts : 
-        t = calculate_distance(t,dx,dy,0.0)
-        # store the max distance
-        ds.append(t.max())
-        # normalize and apply kernel function
-        t = kernel_func(t/t.max()*2.0,1.0)
-
-    ds = np.array(ds)
+    image,dx,dy,ts,ds=setup_template_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug)
     
     # trim particles based on image limits
     ind = np.where((xs > xmin-2*hs) & (xs < xmax+2*hs) & 
@@ -423,8 +396,8 @@ def template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, d
     dbin = np.digitize(max_d,ds)-1
     dbin_sortind = dbin.argsort()
     dbin_sorted = dbin[dbin_sortind]
-    
-    
+
+
     # set the render quantity 
     qts = qts*mass/rhos
 
@@ -449,7 +422,7 @@ def template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, d
                             qts[sl],
                             nx,ny,xmin,xmax,xmin,xmax,image,ts[dind])
         
-    return image, ds, ts, dbin, dbin_sortind, dbin_sorted
+    return image, ts
     
     
 def test_template_render(s,nx,ny,xmin,xmax,qty='rho') : 
