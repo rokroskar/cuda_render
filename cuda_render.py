@@ -4,7 +4,7 @@ Attempt to implement a CUDA-based SPH renderer
 
 import numba
 from numbapro import vectorize, cuda
-from numba import autojit, jit, double, int32, void
+from numba import autojit, jit, double, int32, void, float32
 from numbapro import prange
 import numpy as np
 import pynbody
@@ -15,11 +15,12 @@ import math
 def kernel_func(d, h) : 
     if d < 1 : 
         f = 1.-(3./2)*d**2 + (3./4.)*d**3
-    elif d<2 :
+    elif d <= 2 :
         f = 0.25*(2.-d)**3
     else :
         f = 0
-        
+    if d < 0 : 
+        f = 0
     return f/(np.pi*h**3)
 
 @autojit
@@ -193,11 +194,11 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                                                               
     return image
 
-@cuda.jit(void(double[:,:,:],                           # positions
-               double[:],double[:],double[:],double[:], # hs, qts, mass, rhos
-               int32,int32,double,double,double,double, # nx, ny, xmin, xmax, ymin, ymax
-               double[:,:],                             # image
-               double[:]))                              # kernel_vals
+#@cuda.jit(void(double[:,:,:],                           # positions
+#               double[:],double[:],double[:],double[:], # hs, qts, mass, rhos
+#               int32,int32,double,double,double,double, # nx, ny, xmin, xmax, ymin, ymax
+#               double[:,:],                             # image
+#               double[:]))                              # kernel_vals
 def render_image_cuda(pos,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals) : 
     MAX_D_OVER_H = 2.0
 
@@ -231,7 +232,7 @@ def render_image_cuda(pos,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax,image,kerne
     image[0,0] = shared[0]
 
 
-@cuda.jit(void(numba.int32[:]))
+#@cuda.jit(void(numba.int32[:]))
 def sum_cu(x) :
     shm = cuda.shared.array(shape=(1),dtype=numba.int32)
     cuda.atomic.add(shm,0,1)
@@ -283,34 +284,180 @@ def start_image_render(s,nx,ny,xmin,xmax) :
     xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth','rho','mass','rho']]
     return render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
 
-def try_image_render() : 
-    x=y=z=hs=qts=mass=rhos= np.random.rand(100)
-    nx=ny=10
-    xmin=0
-    xmax=1
-    
-    render_image_serial(x,y,z,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
-
-import numbapro
-
 @autojit
-def privatization_rules():
-    reduction = 1.0
-    private = 2.0
-    shared = 3.0
-    for i in numbapro.prange(10):
-        reduction += i      # The inplace operator specifies a sum reduction
-        reduction -= 1
-        reduction *= 4      # ERROR: inconsistent reduction operator!
-                            # '*' is a product reduction, not a sum reduction
-        print 'reduction', reduction, i 
+def template_kernel(xs,ys,zs,hs,qts,nx,ny,xmin,xmax,ymin,ymax,image,kernel) : 
+    Npart = len(hs) 
+    dx = (xmax-xmin)/nx
+    dy = (ymax-ymin)/ny
 
-        print private       # ERROR: private is not yet initialized!
-        private = i * 4.0   # This assignment makes it private
-        print private       # Private is available now, this is fine
+    kernel_dim = kernel.shape[0]
 
-        print shared        # This variable is only ever read, so it's shared
+    # paint each particle on the image
+    for i in xrange(Npart) : 
+        x,y,z,h,qt = [xs[i],ys[i],zs[i],hs[i],qts[i]]
 
-    print 'reduction = ', reduction         # prints the sum-reduced value
-    print 'private = ', private           # prints the last value, i.e. 99 * 4.0
+        # particle pixel center
+        xpos = physical_to_pixel(x,xmin,dx)
+        ypos = physical_to_pixel(y,ymin,dy)
+    
+        left  = xpos-kernel_dim/2
+        right = xpos+kernel_dim/2+1
+        upper = ypos-kernel_dim/2
+        lower = ypos+kernel_dim/2+1
+
+        ker_left = abs(min(left,0))
+        ker_right = kernel_dim + min(nx-right,0)
+        ker_upper = abs(min(upper,0))
+        ker_lower = kernel_dim + min(ny-lower,0)
+        image[max(left,0):min(right,nx),
+              max(upper,0):min(lower,nx)] += kernel[ker_left:ker_right,
+                                                        ker_upper:ker_lower]*qt/(h*h*h)
+
+def template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax):
+    from bisect import bisect
+    # image parameters
+    MAX_D_OVER_H = 2.0
+
+    image = np.zeros((nx,ny))
+
+    Npart = len(xs)
+
+    dx = (xmax-xmin)/nx
+    dy = (ymax-ymin)/ny
+
+    x_start = xmin+dx/2
+    y_start = ymin+dy/2
+    
+    zplane = 0.0
+    zpixel = zplane
+
+
+    # generate a template library and an array of max. physical
+    # distance corresponding to each template
+
+    ts = []
+    ds = []
+
+    for k in range(5000) :
+        try: 
+            newt = calculate_distance(make_template(k), dx = dx, dy = dy)
+            # store the max distance
+            ds.append(newt.max())
+            # append the new template, normalized and run through the kernel function
+            newt = newt/newt.max()*2.0
+            ts.append(kernel_func(newt,1.0))
+
+        except RuntimeError: 
+            pass
+
+    ds = np.array(ds)
+    ts = np.array(ts)
+    
+    # how many unique templates do we have? 
+    ds, ind = np.unique(ds,return_index=True)
+    ts = ts[ind]
+
+    # trim particles based on image limits
+    ind = np.where((xs > xmin-2*hs) & (xs < xmax+2*hs) & 
+                   (ys > ymin-2*hs) & (ys < ymax+2*hs) & 
+                   (np.abs(zs-zplane) < 2*hs))[0]
+    xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
+    print len(ind)
+    print xs.max(), xs.min(), ys.max(), ys.min(), zs.max(), zs.min(), hs.max(), hs.min()
+    # calculate which template ('k') should be used for each particle
+    # and sort particles by k
+    max_d = 2.0*hs
+    dbin = np.digitize(max_d,ds)-1
+    dbin_sortind = dbin.argsort()
+    dbin_sorted = dbin[dbin_sortind]
+    
+    
+    # set the render quantity 
+    qts = qts*mass/rhos
+
+    # call the render kernel for each template bin
+    prev_index = min(dbin)
+    xs,ys,zs,hs,qts = (xs[dbin_sortind],ys[dbin_sortind],zs[dbin_sortind],hs[dbin_sortind],qts[dbin_sortind])
+    for dind in xrange(min(dbin),max(dbin)) : 
+        
+        next_index = bisect(dbin_sorted,dind)
+        if next_index != prev_index : 
+            sl = slice(prev_index,next_index)
+            prev_index = next_index
+            print 'rendering particles in dbin = ', dind
+            print 'd = ', ds[dind], 'min(h) = %f max(h) = %f'%(min(hs[sl]),max(hs[sl]))
+            template_kernel(xs[sl],
+                            ys[sl],
+                            zs[sl],
+                            hs[sl],
+                            qts[sl],
+                            nx,ny,xmin,xmax,xmin,xmax,image,ts[dind])
+        
+    return image, ds, ts, dbin, dbin_sortind, dbin_sorted
+    
+    
+def test_template_render(s,nx,ny,xmin,xmax,qty='rho') : 
+    xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth',qty,'mass','rho']]
+    return template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
+
+
+#############################
+# render template functions #
+#############################
+
+from numpy import ceil, floor, sqrt, mod
+
+def make_template(k) : 
+    # total number of cells we need
+    Ntotal = 1 + 4*k
+
+    # total number of cells required for the template
+    Ntemplate = ceil(sqrt(Ntotal))
+
+    # need an odd number of cells
+    if mod(Ntemplate,2) == 0 : 
+        Ntemplate = Ntemplate + 1
+
+    # number of cells in the base template -- if the number of total
+    # cells equals the number of template cells, we're done
+
+    if sqrt(Ntotal) == Ntemplate : 
+        return np.ones((sqrt(Ntotal),sqrt(Ntotal)),dtype=np.float32)
+    
+    else : 
+        template = np.zeros((Ntemplate,Ntemplate),dtype=np.float32)-1
+        Nbase = Ntemplate-2
+    
+        # set the base to 1
+        template[1:-1,1:-1] = 1
+    
+        Nleft = Ntotal - Nbase**2
+        
+        # left-overs must be divisible by 4 and odd
+        if (mod(Nleft,4) != 0) or (mod(Nleft/4,2) != 1) :
+            raise(RuntimeError)
+
+        template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,0] = 1
+        template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,-1] = 1
+        template[0,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
+        template[-1,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
+        
+        return template
+
+
+def calculate_distance(template, dx = 1.0, dy = 1.0, normalize = None) : 
+    side_length = template.shape[0]
+    # where is the center position
+    cen = floor(side_length/2)
+    
+    for i in range(side_length) : 
+        for j in range(side_length) : 
+            template[i,j] *= sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
+
+    if normalize is not None : 
+        template = template/template.max()*normalize
+        return template
+    else : 
+        return template
+
 

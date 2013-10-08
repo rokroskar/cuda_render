@@ -39,7 +39,7 @@ def make_template(k) :
         return template
 
 
-def calculate_distance(template, normalize=1.0) : 
+def calculate_distance(template, normalize=None) : 
     side_length = template.shape[0]
     # where is the center position
     cen = floor(side_length/2)
@@ -47,10 +47,11 @@ def calculate_distance(template, normalize=1.0) :
     for i in range(side_length) : 
         for j in range(side_length) : 
             template[i,j] *= sqrt((i-cen)**2 + (j-cen)**2)
-            
-
-    return template/template.max()*normalize
     
+    if normalize is not None: 
+        template = template/template.max()*normalize
+    
+    return template
     
     
     
