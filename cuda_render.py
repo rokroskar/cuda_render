@@ -23,6 +23,18 @@ def kernel_func(d, h) :
         f = 0
     return f/(np.pi*h**3)
 
+@vectorize([double(double,double)])
+def kernel_func_norm(d, h) : 
+    dnorm = d/h
+    if dnorm < 1 : 
+        f = 1.-(3./2)*dnorm**2 + (3./4.)*dnorm**3
+    elif dnorm < 2.0 :
+        f = 0.25*(2.-dnorm)**3
+    else :
+        f = 0
+    
+    return f/(np.pi*h**3)
+
 @autojit
 def _2D_kernel_func(d, h) : 
     return 2*integrate.quad(lambda z : kernel_func(np.sqrt(z**2 + d**2),h),0,h)[0]
@@ -394,6 +406,10 @@ def template_kernel(xs,ys,zs,hs,qts,nx,ny,xmin,xmax,ymin,ymax,image,kernel) :
               max(upper,0):min(lower,nx)] += kernel[ker_left:ker_right,
                                                         ker_upper:ker_lower]*qt/(h*h*h)
 
+#@autojit
+#def add_kernel_to_image(kernel,image,qt,h,ker_left,ker_right) : 
+    
+
 #@jit(float32[:,:](double[:],double[:],double[:],double[:],int32[:],int32[:],int32[:],int32[:]))
 #@autojit
 def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) : 
@@ -419,88 +435,85 @@ def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) :
     # ------------------------------
     
     for my_thread_id in xrange(Nthreads) : 
-        kmax = 5000
+        kmax = 51
         max_d_curr = 0.0
-        max_d_prev = 0.0
         start_ind = 0
         end_ind = 0
-        for k in xrange(kmax) : 
+        for k in xrange(1,kmax,2) : 
             # ----------------------------------------------------------- 
             # generate the template for the next 'k' that has a different
             # max. distance from previous template
             # -----------------------------------------------------------
-            kernel = cu_make_template(k+1)
-            if kernel.max() > 0 : 
-                cu_calculate_distance(kernel,dx,dy)
-                max_d_curr = kernel.max()
+            #            kernel = cu_make_template(k+1)
+            kernel = np.ones((k,k),np.float)
+            
+            cu_calculate_distance(kernel,dx,dy)
+            max_d_curr = dx*np.floor(k/2.0)
+            if max_d_curr < dx/2.0 : max_d_curr = dx/2.0
 
-            if (max_d_curr != max_d_prev)  : 
-                kernel = kernel_func(kernel/kernel.max()*2.0,1.0)
-                kernel_dim = kernel.shape[0]
-        
-                # -------------------------------------------------
-                # find the chunk of particles that need this kernel
-                # -------------------------------------------------
-                for j in xrange(start_ind,Npart) : 
-                    if 2*hs[j] < max_d_curr : pass
-                    else: break
+            # -------------------------------------------------
+            # find the chunk of particles that need this kernel
+            # -------------------------------------------------
+            for j in xrange(start_ind,Npart) : 
+                if 2*hs[j] < max_d_curr : pass
+                else: break
 
-                end_ind = j
+            end_ind = j
                     
-                Nper_kernel = end_ind-start_ind
+            Nper_kernel = end_ind-start_ind
         
-                # increment the distance 
-                max_d_prev = max_d_curr
+            print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
+        
+            # --------------------------------------
+            # determine thread particle distribution
+            # --------------------------------------
+            Nper_thread = Nper_kernel/Nthreads
+            n_start = Nper_thread*my_thread_id+start_ind
 
-                #print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
+            # if this is the last thread, make it pick up the slack
+            if my_thread_id == Nthreads-1 : n_end = end_ind
+            else : n_end = Nper_thread*(my_thread_id+1)+n_start
         
-                # --------------------------------------
-                # determine thread particle distribution
-                # --------------------------------------
-                Nper_thread = Nper_kernel/Nthreads
-                n_start = Nper_thread*my_thread_id+start_ind
+            # all threads have their particle indices figured out, increment for next iteration
+            start_ind = end_ind
 
-                # if this is the last thread, make it pick up the slack
-                if my_thread_id == Nthreads-1 : n_end = end_ind
-                else : n_end = Nper_thread*(my_thread_id+1)+n_start
-        
-                # all threads have their particle indices figured out, increment for next iteration
-                start_ind = end_ind
+            # print 'nperthread = ', Nper_thread, 'n_start = ', n_start, 'n_end = ', n_end
+            # print 'Thread %d processing %d particles for k = %d'%(my_thread_id,n_end-n_start,k)
 
-               # print 'nperthread = ', Nper_thread, 'n_start = ', n_start, 'n_end = ', n_end
-               # print 'Thread %d processing %d particles for k = %d'%(my_thread_id,n_end-n_start,k)
-
-                # ------------------------
-                # synchronize threads here
-                # ------------------------
+            # ------------------------
+            # synchronize threads here
+            # ------------------------
         
-                # cuda.syncthreads()
+            # cuda.syncthreads()
         
-                # --------------------------------
-                # paint each particle on the image
-                # --------------------------------
+            # --------------------------------
+            # paint each particle on the image
+            # --------------------------------
         
-                for pind in xrange(n_start,n_end) : 
-                    x,y,h,qt = [xs[pind],ys[pind],hs[pind],qts[pind]]
+            for pind in xrange(n_start,n_end) : 
+                x,y,h,qt = [xs[pind],ys[pind],hs[pind],qts[pind]]
                 
-                    # particle pixel center
-                    xpos = physical_to_pixel(x,xmin,dx)
-                    ypos = physical_to_pixel(y,ymin,dy)
+                # set the minimum h to be equal to half pixel width
+                h = max(h,0.55*dx)
+
+                # particle pixel center
+                xpos = physical_to_pixel(x,xmin,dx)
+                ypos = physical_to_pixel(y,ymin,dy)
     
-                    left  = xpos-kernel_dim/2
-                    right = xpos+kernel_dim/2+1
-                    upper = ypos-kernel_dim/2
-                    lower = ypos+kernel_dim/2+1
+                left  = xpos-k/2
+                right = xpos+k/2+1
+                upper = ypos-k/2
+                lower = ypos+k/2+1
 
-                    ker_left = abs(min(left,0))
-                    ker_right = kernel_dim + min(nx-right,0)
-                    ker_upper = abs(min(upper,0))
-                    ker_lower = kernel_dim + min(ny-lower,0)
+                ker_left = abs(min(left,0))
+                ker_right = k + min(nx-right,0)
+                ker_upper = abs(min(upper,0))
+                ker_lower = k + min(ny-lower,0)
                     
-                    ker_val = kernel[ker_left:ker_right,ker_upper:ker_lower]*qt/(h*h*h)
+                ker_val = kernel_func_norm(kernel[ker_left:ker_right,ker_upper:ker_lower],h)*qt
 
-                    image[max(left,0):min(right,nx),
-                          max(upper,0):min(lower,nx)] += ker_val 
+                image[max(left,0):min(right,nx),
+                      max(upper,0):min(lower,nx)] += ker_val 
             
             # --------------------------------
             # check if we have reached the end
