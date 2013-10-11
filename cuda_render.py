@@ -238,17 +238,25 @@ def cu_make_template(k) :
     return template
 
 #@jit(float32[:,:](float32[:,:],float32,float32,float32))
-@autojit
+@autojit(nopython=True)
 def cu_calculate_distance(template, dx, dy) : 
     side_length = template.shape[0]
     # where is the center position
     cen = floor(side_length/2.0)
     
-    for i in range(side_length) : 
-        for j in range(side_length) : 
+    for i in xrange(side_length) : 
+        for j in xrange(side_length) : 
             template[i,j] *= sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
     
 
+@autojit
+def get_tile_ids(tiles_physical,xmin,ymin,xs,ys,tileids) : 
+    t_dx = tiles_physical[0,1]-tiles_physical[0,0]
+    t_dy = tiles_physical[0,3]-tiles_physical[0,2]
+    
+    x_ind = np.floor((xs-xmin)/t_dx)
+    y_ind = np.floor((ys-ymin)/t_dy)
+    tileids[:] = x_ind*(np.sqrt(tiles_physical.shape[0]))+y_ind
 
 #@autojit
 def calculate_distance(template, dx, dy, normalize) : 
@@ -342,7 +350,7 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
 
        
     # determine which particles this thread should process
-    Nthreads = 2#cuda.gridDim.x * cuda.blockDim.x
+    Nthreads = 1#cuda.gridDim.x * cuda.blockDim.x
     my_thread_id = 0#cuda.grid(1)
     
     # ------------------------------
@@ -351,7 +359,7 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
    
     for my_thread_id in xrange(Nthreads) : 
         kmax = hs.max()*2.0/dx*2.0
-
+        print 'KMAX = ', kmax
         max_d_curr = 0.0
         start_ind = 0
         end_ind = 0
@@ -477,17 +485,12 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # set the render quantity 
     qts = qts*mass/rhos
 
-    # ---------------------------------------------------------
-    # sort particles by their maximum smoothing kernel distance
-    # ---------------------------------------------------------
+    # -----------------------------------------
+    # sort particles based on their kernel size
+    # -----------------------------------------
 
-    max_d = 2.0*hs
-#    dbin = np.digitize(max_d,ds)-1
-    max_d_sortind = max_d.argsort()
-#    dbin_sorted = dbin[dbin_sortind]
-
-    # sort the particles based on their kernel size
-    xs,ys,zs,hs,qts = (xs[max_d_sortind],ys[max_d_sortind],zs[max_d_sortind],hs[max_d_sortind],qts[max_d_sortind])
+    rec = np.rec.fromarrays([xs,ys,hs,qts])
+    rec.sort(order='f2') 
 
     # ------------------------------------------------------
     # set up the image slices -- max. size is 100x100 pixels 
@@ -495,33 +498,47 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     
     tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
 
-    i=0
-    for tile, tile_p in zip(tiles_pix, tiles_physical) :
-        tile_xmin, tile_xmax, tile_ymin, tile_ymax  = tile_p
-        
-        # which particles will contribute to this tile? 
-        ind = np.where((xs > (tile_xmin+dx/2-2*hs)) & (xs < (tile_xmax-dx/2+2*hs)) & 
-                       (ys > (tile_ymin+dx/2-2*hs)) & (ys < (tile_ymax-dy/2+2*hs)) & 
-                       (np.abs(zs-zplane) < 2*hs))[0]
-
-        nx_tile = tile[1]-tile[0]+1
-        ny_tile = tile[3]-tile[2]+1
-
-        print 'Starting tile %d with %d particles'%(i,len(ind))
-        print 'Tile limits: ',tile_p
-
-        image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[ind],ys[ind],qts[ind],hs[ind],
-                                                                     nx_tile,ny_tile, 
-                                                                     tile_xmin,tile_xmax,tile_ymin,tile_ymax)
-        i+=1
+    process_tiles(rec.f0,rec.f1,rec.f2,rec.f3,tiles_pix, tiles_physical,image)    
 
     return image
 
-@cuda.jit(void(double))
-def test_numba(x) : 
-    x.sort()
-    return x
+#@jit(void(double[:],double[:],double[:],double[:],double[:],int32[:,:],double[:,:],double[:,:]))
+#@autojit
+def process_tiles(xs,ys,hs,qts,tiles_pix,tiles_physical,image):
 
+    Ntiles = tiles_pix.shape[0]
+
+    for i in xrange(Ntiles) :
+        tile   = tiles_pix[i]
+        tile_p = tiles_physical[i]
+
+        tile_xmin, tile_xmax, tile_ymin, tile_ymax  = tile_p[0],tile_p[1],tile_p[2],tile_p[3]
+        
+        nx_tile = tile[1]-tile[0]+1
+        ny_tile = tile[3]-tile[2]+1
+
+        inds = np.where((xs > tile_xmin - 2*hs) & (xs < tile_xmax + 2*hs) & 
+                        (ys > tile_ymin - 2*hs) & (ys < tile_ymax + 2*hs))                        
+
+        #print 'Starting tile %d with %d particles'%(i,imax-imin)
+        #print 'Tile limits: ',tile_p
+
+        image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[inds],
+                                                                         ys[inds],
+                                                                         qts[inds],
+                                                                         hs[inds],
+                                                                         nx_tile,ny_tile, 
+                                                                         tile_xmin,tile_xmax,tile_ymin,tile_ymax)
+    
+
+@autojit
+def where_numba(x) : 
+    return np.where(x>0)
+    
+def where_nonumba(x):
+    return np.where(x>0)
+
+@autojit
 def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim) : 
     # size of pixels in physical space
     dx = float(x_phys_max-x_phys_min)/float(nx)
@@ -530,9 +547,9 @@ def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim) 
     nx_tiles = np.ceil(float(nx)/float(max_dim))
     ny_tiles = np.ceil(float(ny)/float(max_dim))
     n_tiles = nx_tiles*ny_tiles
-    print n_tiles
+
     limits = np.zeros((n_tiles,4),dtype=np.int32)
-    limits_physical = np.zeros((n_tiles,4),dtype=np.float32)
+    limits_physical = np.zeros((n_tiles,4),dtype=np.float)
 
     for i in range(int(nx_tiles)) : 
         xmin = i*max_dim
