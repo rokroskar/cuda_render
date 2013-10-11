@@ -15,7 +15,7 @@ import math
 def kernel_func(d, h) : 
     if d < 1 : 
         f = 1.-(3./2)*d**2 + (3./4.)*d**3
-    elif d < 2.0 :
+    elif d <= 2.0 :
         f = 0.25*(2.-d)**3
     else :
         f = 0
@@ -28,7 +28,7 @@ def kernel_func_norm(d, h) :
     dnorm = d/h
     if dnorm < 1 : 
         f = 1.-(3./2)*dnorm**2 + (3./4.)*dnorm**3
-    elif dnorm < 2.0 :
+    elif dnorm <= 2.0 :
         f = 0.25*(2.-dnorm)**3
     else :
         f = 0
@@ -127,91 +127,6 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
                                                               
     return image
 
-#@cuda.jit(void(double[:,:,:],                           # positions
-#               double[:],double[:],double[:],double[:], # hs, qts, mass, rhos
-#               int32,int32,double,double,double,double, # nx, ny, xmin, xmax, ymin, ymax
-#               double[:,:],                             # image
-#               double[:]))                              # kernel_vals
-def render_image_cuda(pos,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax,image,kernel_vals) : 
-    MAX_D_OVER_H = 2.0
-
-    Npart = pos.shape[0]
-
-    dx = (xmax-xmin)/nx
-    dy = (ymax-ymin)/ny
-
-    x_start = xmin+dx/2.
-    y_start = ymin+dy/2.
-    zplane = 0.0
-    zpixel = zplane
-        
-    # thread ID
-    i = cuda.grid(1)
-    
-    # which set of particles should this thread work on?
-    part_per_thread = int32(Npart/cuda.blockDim.x)
-    my_parts = part_per_thread
-
-    # if this is the last thread, pick up the slack
-    if i == cuda.blockDim.x : my_parts = (Npart-part_per_thread*cuda.blockDim.x) + part_per_thread
-    shared = cuda.shared.array(shape=(10),dtype=double)
-
-    cuda.syncthreads()
-
-    shared[0] += 1.0
-
-    cuda.syncthreads()
-
-    image[0,0] = shared[0]
-
-
-@cuda.jit(void(numba.int32[:]))
-def sum_cu(x) :
-    shm = cuda.shared.array(shape=(1),dtype=numba.int32)
-    cuda.atomic.add(shm,0,1)
-    cuda.syncthreads()
-#    if cuda.threadIdx.x == 0 : x[cuda.blockIdx.x] = shm[0]
-    cuda.atomic.add(x,0,1)
-    
-def sum_test() :
-    Nblocks  = 32
-    Nthreads = 1024
-    
-    x = np.zeros((Nblocks),dtype=np.int)
-    d_x = cuda.to_device(x)
-    sum_cu[Nblocks,Nthreads](d_x)
-    d_x.to_host()
-    return x
-
-def start_cuda_image_render(s,nx,ny,xmin,xmax,qty='rho') : 
-    pos,hs,qts,mass,rhos = [s[arr] for arr in ['pos','smooth',qty,'mass','rho']]
-    
-    stream = cuda.stream()
-
-    # send everything to device
-    d_pos = cuda.to_device(pos,stream=stream)
-    d_hs = cuda.to_device(hs,stream=stream)
-    d_qts = cuda.to_device(qts,stream=stream)
-    d_mass = cuda.to_device(mass,stream=stream)
-    d_rhos = cuda.to_device(rhos,stream=stream)
-
-    # set up the image array and send it to device
-    image = np.zeros((nx,ny),dtype=float)
-    d_image = cuda.to_device(image,stream=stream)
-    
-    # set up the kernel values and send them to device
-    kernel_samples = np.arange(0,2.01,0.01,dtype=np.float)
-    kernel_vals = kernel_func(kernel_samples,1.0)
-    d_kernel_vals = cuda.to_device(kernel_vals,stream=stream)
-    
-    griddim = 1
-    blockdim = 32
-    render_image_cuda[griddim,blockdim](d_pos,d_hs,d_qts,d_mass,d_rhos,nx,ny,xmin,xmax,xmin,xmax,d_image,d_kernel_vals)
-    
-    d_image.to_host()
-
-
-    return image
 
 def start_image_render(s,nx,ny,xmin,xmax) : 
     xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth','rho','mass','rho']]
@@ -411,8 +326,8 @@ def template_kernel(xs,ys,zs,hs,qts,nx,ny,xmin,xmax,ymin,ymax,image,kernel) :
     
 
 #@jit(float32[:,:](double[:],double[:],double[:],double[:],int32[:],int32[:],int32[:],int32[:]))
-#@autojit
-def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) : 
+@autojit
+def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
     # ****************************************************
     # copy kernels to shared memory for faster access here
     # ****************************************************
@@ -433,9 +348,10 @@ def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) :
     # ------------------------------
     # start the loop through kernels
     # ------------------------------
-    
+   
     for my_thread_id in xrange(Nthreads) : 
-        kmax = 51
+        kmax = hs.max()*2.0/dx*2.0
+
         max_d_curr = 0.0
         start_ind = 0
         end_ind = 0
@@ -446,8 +362,8 @@ def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) :
             # -----------------------------------------------------------
             #            kernel = cu_make_template(k+1)
             kernel = np.ones((k,k),np.float)
-            
             cu_calculate_distance(kernel,dx,dy)
+            
             max_d_curr = dx*np.floor(k/2.0)
             if max_d_curr < dx/2.0 : max_d_curr = dx/2.0
 
@@ -462,7 +378,7 @@ def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) :
                     
             Nper_kernel = end_ind-start_ind
         
-            print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
+#            print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
         
             # --------------------------------------
             # determine thread particle distribution
@@ -478,7 +394,7 @@ def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) :
             start_ind = end_ind
 
             # print 'nperthread = ', Nper_thread, 'n_start = ', n_start, 'n_end = ', n_end
-            # print 'Thread %d processing %d particles for k = %d'%(my_thread_id,n_end-n_start,k)
+#            print 'Thread %d processing %d particles for k = %d'%(my_thread_id,n_end-n_start,k)
 
             # ------------------------
             # synchronize threads here
@@ -510,7 +426,8 @@ def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) :
                 ker_upper = abs(min(upper,0))
                 ker_lower = k + min(ny-lower,0)
                     
-                ker_val = kernel_func_norm(kernel[ker_left:ker_right,ker_upper:ker_lower],h)*qt
+                ker_val = kernel_func_norm(kernel[ker_left:ker_right,ker_upper:ker_lower],h)
+                ker_val *= qt
 
                 image[max(left,0):min(right,nx),
                       max(upper,0):min(lower,nx)] += ker_val 
@@ -574,7 +491,7 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # set up the image slices -- max. size is 100x100 pixels 
     # ------------------------------------------------------
     
-    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
+    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,200)
 
     i=0
     for tile, tile_p in zip(tiles_pix, tiles_physical) :
@@ -590,8 +507,8 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
 
         print 'Starting tile %d with %d particles'%(i,len(ind))
         print 'Tile limits: ',tile_p
-        print 'x/y min, max :', 
-        image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[ind],ys[ind],qts[ind],hs[ind],ind,
+
+        image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[ind],ys[ind],qts[ind],hs[ind],
                                                                      nx_tile,ny_tile, 
                                                                      tile_xmin,tile_xmax,tile_ymin,tile_ymax)
         i+=1
