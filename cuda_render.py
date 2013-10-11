@@ -361,11 +361,13 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
             # max. distance from previous template
             # -----------------------------------------------------------
             #            kernel = cu_make_template(k+1)
-            kernel = np.ones((k,k),np.float)
-            cu_calculate_distance(kernel,dx,dy)
             
             max_d_curr = dx*np.floor(k/2.0)
             if max_d_curr < dx/2.0 : max_d_curr = dx/2.0
+
+            kernel = np.ones((k,k),np.float)
+            cu_calculate_distance(kernel,dx,dy)
+            kernel = kernel_func(kernel/(max_d_curr/2.0),1.0)
 
             # -------------------------------------------------
             # find the chunk of particles that need this kernel
@@ -410,8 +412,9 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                 x,y,h,qt = [xs[pind],ys[pind],hs[pind],qts[pind]]
                 
                 # set the minimum h to be equal to half pixel width
+#                h = max_d_curr*.5
                 h = max(h,0.55*dx)
-
+                
                 # particle pixel center
                 xpos = physical_to_pixel(x,xmin,dx)
                 ypos = physical_to_pixel(y,ymin,dy)
@@ -426,11 +429,10 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                 ker_upper = abs(min(upper,0))
                 ker_lower = k + min(ny-lower,0)
                     
-                ker_val = kernel_func_norm(kernel[ker_left:ker_right,ker_upper:ker_lower],h)
-                ker_val *= qt
+                ker_val = kernel[ker_left:ker_right,ker_upper:ker_lower]
+                ker_val *= qt/h**3
 
-                image[max(left,0):min(right,nx),
-                      max(upper,0):min(lower,nx)] += ker_val 
+                image[max(left,0):min(right,nx),max(upper,0):min(lower,nx)] += ker_val 
             
             # --------------------------------
             # check if we have reached the end
@@ -491,7 +493,7 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # set up the image slices -- max. size is 100x100 pixels 
     # ------------------------------------------------------
     
-    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,200)
+    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
 
     i=0
     for tile, tile_p in zip(tiles_pix, tiles_physical) :
@@ -514,6 +516,11 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
         i+=1
 
     return image
+
+@cuda.jit(void(double))
+def test_numba(x) : 
+    x.sort()
+    return x
 
 def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim) : 
     # size of pixels in physical space
