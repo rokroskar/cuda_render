@@ -359,11 +359,12 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
    
     for my_thread_id in xrange(Nthreads) : 
         kmax = hs.max()*2.0/dx*2.0
+        kmin = hs.min()*2.0/dx*2.0
         print 'KMAX = ', kmax
         max_d_curr = 0.0
         start_ind = 0
         end_ind = 0
-        for k in xrange(1,kmax,2) : 
+        for k in xrange(kmin,kmax,2) : 
             # ----------------------------------------------------------- 
             # generate the template for the next 'k' that has a different
             # max. distance from previous template
@@ -492,15 +493,31 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     rec = np.rec.fromarrays([xs,ys,hs,qts])
     rec.sort(order='f2') 
 
-    # ------------------------------------------------------
+    # -----------------------------------------------------------------
     # set up the image slices -- max. size is 100x100 pixels 
-    # ------------------------------------------------------
+    # in this step only process particles that need kernels < 50 pixels
+    # -----------------------------------------------------------------
     
     tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
+    ind = np.searchsorted(rec.f2,[0.0,25.*dx/2.0])
+    process_tiles(rec.f0[ind[0]:ind[1]],
+                  rec.f1[ind[0]:ind[1]],
+                  rec.f2[ind[0]:ind[1]],
+                  rec.f3[ind[0]:ind[1]],tiles_pix, tiles_physical,image)    
 
-    process_tiles(rec.f0,rec.f1,rec.f2,rec.f3,tiles_pix, tiles_physical,image)    
+    # --------------------------------------------------
+    # process the particles with large smoothing lengths
+    # --------------------------------------------------
+    
+    print ind
 
-    return image
+    image += cu_template_kernel(rec.f0[ind[1]:],
+                                rec.f1[ind[1]:],
+                                rec.f2[ind[1]:],
+                                rec.f3[ind[1]:],
+                                nx,ny,xmin,xmax,ymin,ymax)
+    
+    return image, rec, ind
 
 #@jit(void(double[:],double[:],double[:],double[:],double[:],int32[:,:],double[:,:],double[:,:]))
 #@autojit
@@ -518,17 +535,18 @@ def process_tiles(xs,ys,hs,qts,tiles_pix,tiles_physical,image):
         ny_tile = tile[3]-tile[2]+1
 
         inds = np.where((xs > tile_xmin - 2*hs) & (xs < tile_xmax + 2*hs) & 
-                        (ys > tile_ymin - 2*hs) & (ys < tile_ymax + 2*hs))                        
+                        (ys > tile_ymin - 2*hs) & (ys < tile_ymax + 2*hs))[0]                        
 
-        #print 'Starting tile %d with %d particles'%(i,imax-imin)
+ #       print 'Starting tile %d with %d particles'%(i,imax-imin)
         #print 'Tile limits: ',tile_p
 
-        image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[inds],
-                                                                         ys[inds],
-                                                                         qts[inds],
-                                                                         hs[inds],
-                                                                         nx_tile,ny_tile, 
-                                                                         tile_xmin,tile_xmax,tile_ymin,tile_ymax)
+        if inds.shape[0] > 0 : 
+            image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[inds],
+                                                                             ys[inds],
+                                                                             qts[inds],
+                                                                             hs[inds],
+                                                                             nx_tile,ny_tile, 
+                                                                             tile_xmin,tile_xmax,tile_ymin,tile_ymax)
     
 
 @autojit
