@@ -221,6 +221,150 @@ def cu_physical_to_pixel(xpos,xmin,dx) :
 def cu_pixel_to_physical(xpix,x_start,dx) : 
     return dx*xpix+x_start
 
+
+#############################
+# render template functions #
+#############################
+
+from numpy import ceil, floor, sqrt, mod
+
+def make_template(k) : 
+    # total number of cells we need
+    Ntotal = 1 + 4*k
+
+    # total number of cells required for the template
+    Ntemplate = ceil(sqrt(Ntotal))
+
+    # need an odd number of cells
+    if mod(Ntemplate,2) == 0 : 
+        Ntemplate = Ntemplate + 1
+
+    # number of cells in the base template -- if the number of total
+    # cells equals the number of template cells, we're done
+
+    if sqrt(Ntotal) == Ntemplate : 
+        return np.ones((sqrt(Ntotal),sqrt(Ntotal)),dtype=np.float)
+    
+    else : 
+        template = np.zeros((Ntemplate,Ntemplate),dtype=np.float)-1
+        Nbase = Ntemplate-2
+    
+        # set the base to 1
+        template[1:-1,1:-1] = 1
+    
+        Nleft = Ntotal - Nbase**2
+        
+        # left-overs must be divisible by 4 and odd
+        if (mod(Nleft,4) != 0) or (mod(Nleft/4,2) != 1) :
+            raise(RuntimeError)
+
+        template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,0] = 1
+        template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,-1] = 1
+        template[0,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
+        template[-1,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
+        
+        return template
+
+@autojit
+def test(N):
+    return mod(Ntemplate,2)
+
+#@jit(float32[:,:](int32))
+#s1rt(0@autojit
+def cu_make_template(k) : 
+    # total number of cells we need
+    Ntotal = 1 + 4*k
+
+    # total number of cells required for the template
+    Ntemplate = ceil(sqrt(Ntotal))
+
+    # need an odd number of cells
+    if mod(Ntemplate,2) == 0 : 
+        Ntemplate = Ntemplate + 1
+
+    # number of cells in the base template -- if the number of total
+    # cells equals the number of template cells, we're done
+
+    if sqrt(Ntotal) == Ntemplate : 
+        template = np.ones((sqrt(Ntotal),sqrt(Ntotal)))
+    
+    else : 
+        template = np.zeros((Ntemplate,Ntemplate))
+        template -= 1
+        Nbase = Ntemplate-2
+        Nleft = Ntotal - Nbase**2
+
+        # left-overs must be divisible by 4 and odd
+        if (mod(Nleft,4) != 0) or (mod(Nleft/4,2) != 1) :
+            return template
+        
+        else :
+            # set the base to 1
+            template[1:-1,1:-1] = 1
+            
+            # set up the outer pixels
+            template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,0] = 1
+            template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,-1] = 1
+            template[0,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
+            template[-1,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
+        
+    return template
+
+#@jit(float32[:,:](float32[:,:],float32,float32,float32))
+@autojit
+def cu_calculate_distance(template, dx, dy) : 
+    side_length = template.shape[0]
+    # where is the center position
+    cen = floor(side_length/2.0)
+    
+    for i in range(side_length) : 
+        for j in range(side_length) : 
+            template[i,j] *= sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
+    
+
+
+#@autojit
+def calculate_distance(template, dx, dy, normalize) : 
+    side_length = template.shape[0]
+    # where is the center position
+    cen = floor(side_length/2)
+    
+    for i in range(side_length) : 
+        for j in range(side_length) : 
+            template[i,j] *= sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
+
+    if normalize > 0 : 
+        template = template/template.max()*normalize
+    else : 
+        return template
+
+
+def generate_template_set(kmax) : 
+    ts = []
+    ds = []
+    ks = np.arange(kmax,dtype=np.float32)
+
+    for k in ks :
+        try: 
+            newt = make_template(k)
+            # append the new template
+            ts.append(newt)
+            ds.append(calculate_distance(newt.copy(),0.2,0.7,0.0).max())
+        except RuntimeError: 
+            pass
+    
+    ds = np.array(ds)
+    ts = np.array(ts)
+
+    # how many unique template/distance pairs
+    ds, ind = np.unique(ds,return_index=True)
+
+    ts = ts[ind]
+    ks = ks[ind]
+    np.savez('image_templates',ts=ts,ds=ds,ks=ks)
+    print 'found %d unique templates'%len(ds)
+    return ts, ds, ks
+
 @autojit
 def template_kernel(xs,ys,zs,hs,qts,nx,ny,xmin,xmax,ymin,ymax,image,kernel) : 
     Npart = len(hs) 
@@ -252,14 +396,10 @@ def template_kernel(xs,ys,zs,hs,qts,nx,ny,xmin,xmax,ymin,ymax,image,kernel) :
 
 #@jit(float32[:,:](double[:],double[:],double[:],double[:],int32[:],int32[:],int32[:],int32[:]))
 #@autojit
-def cu_template_kernel(xs,ys,qts,hs,ind,Ns,minmax) : 
+def cu_template_kernel(xs,ys,qts,hs,ind,nx,ny,xmin,xmax,ymin,ymax) : 
     # ****************************************************
     # copy kernels to shared memory for faster access here
     # ****************************************************
-
-    # image properties
-    nx,ny = Ns
-    xmin,xmax,ymin,ymax = minmax
 
     # create local image 
     # ** this will be done in shared memory **
@@ -278,10 +418,7 @@ def cu_template_kernel(xs,ys,qts,hs,ind,Ns,minmax) :
     # start the loop through kernels
     # ------------------------------
     
-
-    
-
-    for my_thread_id in [0,1] : 
+    for my_thread_id in xrange(Nthreads) : 
         kmax = 5000
         max_d_curr = 0.0
         max_d_prev = 0.0
@@ -294,7 +431,7 @@ def cu_template_kernel(xs,ys,qts,hs,ind,Ns,minmax) :
             # -----------------------------------------------------------
             kernel = cu_make_template(k+1)
             if kernel.max() > 0 : 
-                cu_calculate_distance(kernel,dx,dy,0.0)
+                cu_calculate_distance(kernel,dx,dy)
                 max_d_curr = kernel.max()
 
             if (max_d_curr != max_d_prev)  : 
@@ -360,10 +497,10 @@ def cu_template_kernel(xs,ys,qts,hs,ind,Ns,minmax) :
                     ker_upper = abs(min(upper,0))
                     ker_lower = kernel_dim + min(ny-lower,0)
                     
-                    image[max(left,0):min(right,nx),
-                          max(upper,0):min(lower,nx)] += kernel[ker_left:ker_right,
-                                                                ker_upper:ker_lower]*qt/(h*h*h)
+                    ker_val = kernel[ker_left:ker_right,ker_upper:ker_lower]*qt/(h*h*h)
 
+                    image[max(left,0):min(right,nx),
+                          max(upper,0):min(lower,nx)] += ker_val 
             
             # --------------------------------
             # check if we have reached the end
@@ -442,8 +579,8 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
         print 'Tile limits: ',tile_p
         print 'x/y min, max :', 
         image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[ind],ys[ind],qts[ind],hs[ind],ind,
-                                                                     [nx_tile,ny_tile], 
-                                                                     tile_p)
+                                                                     nx_tile,ny_tile, 
+                                                                     tile_xmin,tile_xmax,tile_ymin,tile_ymax)
         i+=1
 
     return image
@@ -586,149 +723,3 @@ def test_template_render(s,nx,ny,xmin,xmax,qty='rho') :
     return cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
 
 
-#############################
-# render template functions #
-#############################
-
-from numpy import ceil, floor, sqrt, mod
-
-def make_template(k) : 
-    # total number of cells we need
-    Ntotal = 1 + 4*k
-
-    # total number of cells required for the template
-    Ntemplate = ceil(sqrt(Ntotal))
-
-    # need an odd number of cells
-    if mod(Ntemplate,2) == 0 : 
-        Ntemplate = Ntemplate + 1
-
-    # number of cells in the base template -- if the number of total
-    # cells equals the number of template cells, we're done
-
-    if sqrt(Ntotal) == Ntemplate : 
-        return np.ones((sqrt(Ntotal),sqrt(Ntotal)),dtype=np.float)
-    
-    else : 
-        template = np.zeros((Ntemplate,Ntemplate),dtype=np.float)-1
-        Nbase = Ntemplate-2
-    
-        # set the base to 1
-        template[1:-1,1:-1] = 1
-    
-        Nleft = Ntotal - Nbase**2
-        
-        # left-overs must be divisible by 4 and odd
-        if (mod(Nleft,4) != 0) or (mod(Nleft/4,2) != 1) :
-            raise(RuntimeError)
-
-        template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,0] = 1
-        template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,-1] = 1
-        template[0,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
-        template[-1,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
-        
-        return template
-
-@autojit
-def test(N):
-    return mod(Ntemplate,2)
-
-#@jit(float32[:,:](int32))
-#s1rt(0@autojit
-def cu_make_template(k) : 
-    # total number of cells we need
-    Ntotal = 1 + 4*k
-
-    # total number of cells required for the template
-    Ntemplate = ceil(sqrt(Ntotal))
-
-    # need an odd number of cells
-    if mod(Ntemplate,2) == 0 : 
-        Ntemplate = Ntemplate + 1
-
-    # number of cells in the base template -- if the number of total
-    # cells equals the number of template cells, we're done
-
-    if sqrt(Ntotal) == Ntemplate : 
-        template = np.ones((sqrt(Ntotal),sqrt(Ntotal)))
-    
-    else : 
-        template = np.zeros((Ntemplate,Ntemplate))
-        template -= 1
-        Nbase = Ntemplate-2
-        Nleft = Ntotal - Nbase**2
-
-        # left-overs must be divisible by 4 and odd
-        if (mod(Nleft,4) != 0) or (mod(Nleft/4,2) != 1) :
-            return template
-        
-        else :
-            # set the base to 1
-            template[1:-1,1:-1] = 1
-            
-            # set up the outer pixels
-            template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,0] = 1
-            template[(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2,-1] = 1
-            template[0,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
-            template[-1,(Ntemplate-Nleft/4)/2:-(Ntemplate-Nleft/4)/2] = 1
-        
-    return template
-
-#@jit(float32[:,:](float32[:,:],float32,float32,float32))
-#@autojit
-def cu_calculate_distance(template, dx, dy, normalize) : 
-    side_length = template.shape[0]
-    # where is the center position
-    cen = floor(side_length/2.0)
-    
-    for i in range(side_length) : 
-        for j in range(side_length) : 
-            template[i,j] *= sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
-
-    if normalize > 0.0 : 
-        template = template/template.max()*normalize
-    else : 
-        return template
-
-
-#@autojit
-def calculate_distance(template, dx, dy, normalize) : 
-    side_length = template.shape[0]
-    # where is the center position
-    cen = floor(side_length/2)
-    
-    for i in range(side_length) : 
-        for j in range(side_length) : 
-            template[i,j] *= sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
-
-    if normalize > 0 : 
-        template = template/template.max()*normalize
-    else : 
-        return template
-
-
-def generate_template_set(kmax) : 
-    ts = []
-    ds = []
-    ks = np.arange(kmax,dtype=np.float32)
-
-    for k in ks :
-        try: 
-            newt = make_template(k)
-            # append the new template
-            ts.append(newt)
-            ds.append(calculate_distance(newt.copy(),0.2,0.7,0.0).max())
-        except RuntimeError: 
-            pass
-    
-    ds = np.array(ds)
-    ts = np.array(ts)
-
-    # how many unique template/distance pairs
-    ds, ind = np.unique(ds,return_index=True)
-
-    ts = ts[ind]
-    ks = ks[ind]
-    np.savez('image_templates',ts=ts,ds=ds,ks=ks)
-    print 'found %d unique templates'%len(ds)
-    return ts, ds, ks
