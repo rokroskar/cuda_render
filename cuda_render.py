@@ -364,7 +364,7 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
         max_d_curr = 0.0
         start_ind = 0
         end_ind = 0
-        for k in xrange(kmin,kmax,2) : 
+        for k in xrange(1,51,2) : 
             # ----------------------------------------------------------- 
             # generate the template for the next 'k' that has a different
             # max. distance from previous template
@@ -511,11 +511,11 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     
     print ind
 
-    image += cu_template_kernel(rec.f0[ind[1]:],
-                                rec.f1[ind[1]:],
-                                rec.f2[ind[1]:],
-                                rec.f3[ind[1]:],
-                                nx,ny,xmin,xmax,ymin,ymax)
+    #image += cu_template_kernel(rec.f0[ind[1]:],
+    #                            rec.f1[ind[1]:],
+    #                            rec.f2[ind[1]:],
+    #                            rec.f3[ind[1]:],
+    #                            nx,ny,xmin,xmax,ymin,ymax)
     
     return image, rec, ind
 
