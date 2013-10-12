@@ -10,8 +10,9 @@ import numpy as np
 import pynbody
 import scipy.integrate as integrate
 import math
+import time
 
-@vectorize([double(double,double)])
+@vectorize(['double(double,double)'])
 def kernel_func(d, h) : 
     if d < 1 : 
         f = 1.-(3./2)*d**2 + (3./4.)*d**3
@@ -237,13 +238,11 @@ def cu_make_template(k) :
     return template
 
 #
-#@autojit(nopython=True)
-#@jit(void(float32[:,:],float32,float32))
-@autojit
+@autojit(nopython=True)
 def cu_calculate_distance(template, dx, dy) : 
     side_length = template.shape[0]
     # where is the center position
-    cen = floor(side_length/2.0)
+    cen = side_length/2
     
     for i in xrange(side_length) : 
         for j in xrange(side_length) : 
@@ -259,20 +258,16 @@ def get_tile_ids(tiles_physical,xmin,ymin,xs,ys,tileids) :
     y_ind = np.floor((ys-ymin)/t_dy)
     tileids[:] = x_ind*(np.sqrt(tiles_physical.shape[0]))+y_ind
 
-#@autojit
-def calculate_distance(template, dx, dy, normalize) : 
+@autojit(nopython=True)
+def calculate_distance(template, dx, dy) : 
     side_length = template.shape[0]
     # where is the center position
-    cen = floor(side_length/2)
+    cen = side_length/2
     
     for i in range(side_length) : 
         for j in range(side_length) : 
-            template[i,j] *= sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
+            template[i,j] = sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
 
-    if normalize > 0 : 
-        template = template/template.max()*normalize
-    else : 
-        return template
 
 
 def generate_template_set(kmax) : 
@@ -285,7 +280,7 @@ def generate_template_set(kmax) :
             newt = make_template(k)
             # append the new template
             ts.append(newt)
-            ds.append(calculate_distance(newt.copy(),0.2,0.7,0.0).max())
+            ds.append(calculate_distance(newt.copy(),1.0,1.0).max())
         except RuntimeError: 
             pass
     
@@ -331,14 +326,14 @@ def template_kernel(xs,ys,zs,hs,qts,nx,ny,xmin,xmax,ymin,ymax,image,kernel) :
                                                         ker_upper:ker_lower]*qt/(h*h*h)
 
 @autojit
-def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
+def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
     # ****************************************************
     # copy kernels to shared memory for faster access here
     # ****************************************************
 
     # create local image 
     # ** this will be done in shared memory **
-    image = np.zeros((nx,ny))
+    image = np.zeros((nx,ny),dtype=np.float)
 
     Npart = len(hs) 
     dx = (xmax-xmin)/nx
@@ -352,107 +347,106 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
     # ------------------------------
     # start the loop through kernels
     # ------------------------------
-    for my_thread_id in xrange(Nthreads) : 
-        kmax = int(np.ceil(hs.max()*2.0/dx*2.0))
-        kmin = int(np.floor(hs.min()*2.0/dx*2.0))
-        # make sure kmin and kmax are odd
-        if not mod(kmax,2) : kmax += 1
-        if not mod(kmin,2) : kmin += 1
-     
-        kernel_base = np.ones((kmax,kmax))
-        cu_calculate_distance(kernel_base,dx,dy)
+    kmax = int(np.ceil(hs.max()*2.0/dx*2.0))
+    kmin = int(np.floor(hs.min()*2.0/dx*2.0))
+    # make sure kmin and kmax are odd
+    if not mod(kmax,2) : kmax += 1
+    if not mod(kmin,2) : kmin += 1
+    kmin = max(1,kmin)
+    kernel_base = np.ones((kmax,kmax))
+    calculate_distance(kernel_base,dx,dy)
+#    print 'KMAX, KMIN', kmax, kmin
+    
+    max_d_curr = 0.0
+    start_ind = 0
+    end_ind = 0
+    for k in xrange(kmin,kmax+2,2) : 
+        # ---------------------------------
+        # the max. distance for this kernel
+        # ---------------------------------
+        max_d_curr = dx*np.floor(k/2.0)
+        if max_d_curr < dx/2.0 : max_d_curr = dx/2.0
+
+        i_max_d = double(1./max_d_curr)
+        # -------------------------------------------------
+        # find the chunk of particles that need this kernel
+        # -------------------------------------------------
+        for j in xrange(start_ind,Npart) : 
+            if 2*hs[j] < max_d_curr : pass
+            else: break
+
+        end_ind = j
         
-        max_d_curr = 0.0
-        start_ind = 0
-        end_ind = 0
-        for k in xrange(kmin,kmax,2) : 
-            # ---------------------------------
-            # the max. distance for this kernel
-            # ---------------------------------
-            max_d_curr = dx*np.floor(k/2.0)
-            if max_d_curr < dx/2.0 : max_d_curr = dx/2.0
+        Nper_kernel = end_ind-start_ind
+        
+        # -------------------------------------------------------------------------
+        # only continue with kernel generation if there are particles that need it!
+        # -------------------------------------------------------------------------
+        if Nper_kernel > 0 : 
+            kernel = kernel_base[kmax/2-k/2:kmax/2+k/2+1,
+                                 kmax/2-k/2:kmax/2+k/2+1]
+            kernel = kernel_func(kernel*i_max_d*2.0,1.0)
+            kernel *= i_max_d*i_max_d*i_max_d
+#            print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
+        
+            # --------------------------------------
+            # determine thread particle distribution
+            # --------------------------------------
+            Nper_thread = Nper_kernel/Nthreads
+            n_start = Nper_thread*my_thread_id+start_ind
 
-            i_max_d = 1./max_d_curr
-            # -------------------------------------------------
-            # find the chunk of particles that need this kernel
-            # -------------------------------------------------
-            for j in xrange(start_ind,Npart) : 
-                if 2*hs[j] < max_d_curr : pass
-                else: break
-
-            end_ind = j
+            # if this is the last thread, make it pick up the slack
+            if my_thread_id == Nthreads-1 : 
+                n_end = end_ind
+            else : 
+                n_end = Nper_thread*(my_thread_id+1)+n_start
                     
-            Nper_kernel = end_ind-start_ind
-        
-            # -------------------------------------------------------------------------
-            # only continue with kernel generation if there are particles that need it!
-            # -------------------------------------------------------------------------
-            if Nper_kernel > 0 : 
-                kernel = kernel_base[kmax/2-k/2:kmax/2+k/2+1,
-                                     kmax/2-k/2:kmax/2+k/2+1]
-                kernel = kernel_func(kernel*i_max_d*2.0,1.0)
-                           
-                #print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
-        
-                # --------------------------------------
-                # determine thread particle distribution
-                # --------------------------------------
-                Nper_thread = Nper_kernel/Nthreads
-                n_start = Nper_thread*my_thread_id+start_ind
+            # all threads have their particle indices figured out, increment for next iteration
+            start_ind = end_ind
 
-                # if this is the last thread, make it pick up the slack
-                if my_thread_id == Nthreads-1 : 
-                    n_end = end_ind
-                else : 
-                    n_end = Nper_thread*(my_thread_id+1)+n_start
-                    
-                # all threads have their particle indices figured out, increment for next iteration
-                start_ind = end_ind
-
-                # print 'nperthread = ', Nper_thread, 'n_start = ', n_start, 'n_end = ', n_end
+            # print 'nperthread = ', Nper_thread, 'n_start = ', n_start, 'n_end = ', n_end
                 #print 'Thread %d processing %d particles for k = %d'%(my_thread_id,n_end-n_start,k)
 
-                # ------------------------
-                # synchronize threads here
-                # ------------------------
+            # ------------------------
+            # synchronize threads here
+            # ------------------------
         
-                # cuda.syncthreads()
+            # cuda.syncthreads()
         
-                # --------------------------------
-                # paint each particle on the image
-                # --------------------------------
-        
-                for pind in xrange(n_start,n_end) : 
-                    x,y,h,qt = [xs[pind],ys[pind],hs[pind],qts[pind]]
+            # --------------------------------
+            # paint each particle on the image
+            # --------------------------------
+            for pind in xrange(n_start,n_end) : 
+                x,y,h,qt = [xs[pind],ys[pind],hs[pind],qts[pind]]
                 
-                    # set the minimum h to be equal to half pixel width
-                    #                h = max_d_curr*.5
-                    h = max(h,0.55*dx)
+                # set the minimum h to be equal to half pixel width
+                #                h = max_d_curr*.5
+                #h = max(h,0.55*dx)
                 
-                    # particle pixel center
-                    xpos = physical_to_pixel(x,xmin,dx)
-                    ypos = physical_to_pixel(y,ymin,dy)
+                # particle pixel center
+                xpos = physical_to_pixel(x,xmin,dx)
+                ypos = physical_to_pixel(y,ymin,dy)
     
-                    left  = xpos-k/2
-                    right = xpos+k/2+1
-                    upper = ypos-k/2
-                    lower = ypos+k/2+1
+                left  = xpos-k/2
+                right = xpos+k/2+1
+                upper = ypos-k/2
+                lower = ypos+k/2+1
 
-                    ker_left = abs(min(left,0))
-                    ker_right = k + min(nx-right,0)
-                    ker_upper = abs(min(upper,0))
-                    ker_lower = k + min(ny-lower,0)
-                    
-                    ker_val = kernel[ker_left:ker_right,ker_upper:ker_lower]
-                    ker_val *= qt/h**3
+                ker_left = abs(min(left,0))
+                ker_right = k + min(nx-right,0)
+                ker_upper = abs(min(upper,0))
+                ker_lower = k + min(ny-lower,0)
+                
+                ker_val = kernel[ker_left:ker_right,ker_upper:ker_lower]
+                ker_val *= qt
 
-                    image[max(left,0):min(right,nx),max(upper,0):min(lower,nx)] += ker_val 
+                image[max(left,0):min(right,nx),max(upper,0):min(lower,nx)] += ker_val 
             
-                # --------------------------------
-                # check if we have reached the end
-                # --------------------------------
-                if end_ind == Npart-1 : 
-                    break
+            # --------------------------------
+            # check if we have reached the end
+            # --------------------------------
+            if end_ind == Npart-1 : 
+                break
 
     return image
 
@@ -472,7 +466,7 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     #image,dx,dy,x_start,y_start,pix_kernels,ds,ks=setup_template_image(xs,ys,zs,hs,qts,mass,rhos,
      #nx,ny,xmin,xmax,ymin,ymax,debug)
     
-    image = np.zeros((nx,ny),dtype=np.float32)
+    image = np.zeros((nx,ny))
     
     dx = (xmax-xmin)/nx
     dy = (ymax-ymin)/ny
@@ -484,9 +478,13 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
 
 
     # trim particles based on image limits
+    start = time.clock()
     ind = np.where((xs > xmin-2*hs) & (xs < xmax+2*hs) & 
-                   (ys > ymin-2*hs) & (ys < ymax+2*hs) & 
-                   (np.abs(zs-zplane) < 2*hs))[0]
+                   (ys > ymin-2*hs) & (ys < ymax+2*hs)) #&
+#                   (np.abs(zs-zplane) < 2*hs))[0]
+
+    print '<<< Initial particle selection took %f s'%(time.clock()-start)
+
     xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
     # set the render quantity 
     qts = qts*mass/rhos
@@ -496,7 +494,9 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # -----------------------------------------
 
     rec = np.rec.fromarrays([xs,ys,qts,hs])
-    rec.sort(order='f3') 
+    start = time.clock()
+    rec.sort(order='f3')
+    print '<<< Sorting on smoothing length took %f'%(time.clock()-start)
 
     # -----------------------------------------------------------------
     # set up the image slices -- max. size is 100x100 pixels 
@@ -504,33 +504,44 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # -----------------------------------------------------------------
     
     tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
+    start = time.clock()
     ind = np.searchsorted(rec.f3,[0.0,25.*dx/2.0])
+    print '<<< Sorted search took %f s'%(time.clock()-start)
+    
+    # --------------------------------------
+    # set up the kernels that will be needed
+    # --------------------------------------
+
+    start = time.clock()
     process_tiles(rec.f0[:ind[1]],
                   rec.f1[:ind[1]],
                   rec.f2[:ind[1]],
                   rec.f3[:ind[1]],tiles_pix, tiles_physical,image)    
-
+    print '<<< Processing %d tiles with %d particles took %f s'%(len(tiles_pix), 
+                                                                 ind[1],time.clock()-start)
     # --------------------------------------------------
     # process the particles with large smoothing lengths
     # --------------------------------------------------
-    
-    print ind
-
     if ind[1] != len(xs) : 
-        image += cu_template_kernel(rec.f0[ind[1]:],
+        start = time.clock()
+        image += template_kernel_cpu(rec.f0[ind[1]:],
                                     rec.f1[ind[1]:],
                                     rec.f2[ind[1]:],
                                     rec.f3[ind[1]:],
                                     nx,ny,xmin,xmax,ymin,ymax)
+        print '<<< Processing %d particles with large smoothing lengths took %f s'%(len(xs)-ind[1],
+                                                                                    time.clock()-start)
     
     return image, rec, ind
 
 #@jit(void(double[:],double[:],double[:],double[:],int32[:,:],double[:,:],float32[:,:]))
+#@autojit
 def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image):
 
     Ntiles = tiles_pix.shape[0]
 
     for i in xrange(Ntiles) :
+        
         tile   = tiles_pix[i]
         tile_p = tiles_physical[i]
 
@@ -538,21 +549,20 @@ def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image):
         
         nx_tile = tile[1]-tile[0]+1
         ny_tile = tile[3]-tile[2]+1
-
+               
         inds = np.where((xs > tile_xmin - 2*hs) & (xs < tile_xmax + 2*hs) & 
                         (ys > tile_ymin - 2*hs) & (ys < tile_ymax + 2*hs))[0]                        
-
+     #   print '<<< Tile %d where took %f s'%(i,time.clock()-start)
  #       print 'Starting tile %d with %d particles'%(i,imax-imin)
         #print 'Tile limits: ',tile_p
 
         if inds.shape[0] > 0 : 
-            image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += cu_template_kernel(xs[inds],
-                                                                             ys[inds],
-                                                                             qts[inds],
-                                                                             hs[inds],
-                                                                             nx_tile,ny_tile, 
-                                                                             tile_xmin,tile_xmax,tile_ymin,tile_ymax)
-    
+            start = time.clock()
+            im_tile = template_kernel_cpu(xs[inds],ys[inds],qts[inds],hs[inds],
+                                          nx_tile,ny_tile,tile_xmin,tile_xmax,tile_ymin,tile_ymax)
+            print '<<< Tile %d render took %f s'%(i,time.clock()-start)
+            image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += im_tile
+            
 
 @autojit
 def where_numba(x) : 
@@ -627,13 +637,13 @@ def setup_template_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, de
 
     except IOError : 
         'Templates not found -- generating a new set'
-        ts, ds = generate_template_set(5000)
+        ts, ds, ks = generate_template_set(500)
     
     del(ds)
     ds = []
     
     for i,t in enumerate(ts) : 
-        t = calculate_distance(t,dx,dy,0.0)
+        calculate_distance(t,dx,dy)
         # store the max distance
         ds.append(t.max())
         # normalize and apply kernel function
@@ -696,7 +706,10 @@ def template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, d
     
     
 def test_template_render(s,nx,ny,xmin,xmax,qty='rho') : 
+    start = time.clock()
     xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth',qty,'mass','rho']]
-    return cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
+    res = cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
+    print '<<< Done after %f seconds'%(time.clock()-start)
+    return res 
 
 
