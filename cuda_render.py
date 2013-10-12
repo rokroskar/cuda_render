@@ -19,8 +19,7 @@ def kernel_func(d, h) :
         f = 0.25*(2.-d)**3
     else :
         f = 0
-    if d < 0 : 
-        f = 0
+   
     return f/(np.pi*h**3)
 
 @vectorize([double(double,double)])
@@ -239,7 +238,8 @@ def cu_make_template(k) :
 
 #
 #@autojit(nopython=True)
-@jit(void(float32[:,:],float32,float32))
+#@jit(void(float32[:,:],float32,float32))
+@autojit
 def cu_calculate_distance(template, dx, dy) : 
     side_length = template.shape[0]
     # where is the center position
@@ -359,8 +359,8 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
         if not mod(kmax,2) : kmax += 1
         if not mod(kmin,2) : kmin += 1
      
-#        kernel_base = np.empty((kmax,kmax),dtype=np.float32)
-    #    print '%d < K < %d Nparts = %d'%(kmin,kmax,Npart)
+        kernel_base = np.ones((kmax,kmax))
+        cu_calculate_distance(kernel_base,dx,dy)
         
         max_d_curr = 0.0
         start_ind = 0
@@ -372,6 +372,7 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
             max_d_curr = dx*np.floor(k/2.0)
             if max_d_curr < dx/2.0 : max_d_curr = dx/2.0
 
+            i_max_d = 1./max_d_curr
             # -------------------------------------------------
             # find the chunk of particles that need this kernel
             # -------------------------------------------------
@@ -387,11 +388,10 @@ def cu_template_kernel(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
             # only continue with kernel generation if there are particles that need it!
             # -------------------------------------------------------------------------
             if Nper_kernel > 0 : 
-                kernel = np.empty((k,k),dtype=np.float32)
-                cu_calculate_distance(kernel,dx,dy)
-                kernel = kernel_func(kernel/(max_d_curr/2.0),1.0)
-
-            
+                kernel = kernel_base[kmax/2-k/2:kmax/2+k/2+1,
+                                     kmax/2-k/2:kmax/2+k/2+1]
+                kernel = kernel_func(kernel*i_max_d*2.0,1.0)
+                           
                 #print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
         
                 # --------------------------------------
