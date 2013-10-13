@@ -325,6 +325,69 @@ def template_kernel(xs,ys,zs,hs,qts,nx,ny,xmin,xmax,ymin,ymax,image,kernel) :
               max(upper,0):min(lower,nx)] += kernel[ker_left:ker_right,
                                                         ker_upper:ker_lower]*qt/(h*h*h)
 
+
+def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
+    """
+    CPU part of the SPH render code
+    
+    does some basic particle set prunning and sets up the image
+    tiles. It launches cuda kernels for rendering the individual sections of the image
+    """
+    
+    time_init = time.clock()
+    
+    xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth',qty,'mass','rho']]
+
+    # ----------------------
+    # setup the global image
+    # ----------------------
+    image = np.zeros((nx,ny))
+    
+    dx = (xmax-xmin)/nx
+    dy = (ymax-ymin)/ny
+    
+    x_start = xmin+dx/2
+    y_start = ymin+dy/2
+
+    zplane = 0.0
+
+    # ------------------------------------
+    # trim particles based on image limits
+    # ------------------------------------
+    start = time.clock()
+    ind = np.where((xs + 2*hs > xmin) & (xs - 2*hs < xmax) & 
+                   (ys + 2*hs > ymin) & (ys - 2*hs < ymax))[0]
+#    (np.abs(zs-zplane) < 2*hs) & 
+
+    xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
+    if timing: print '<<< Initial particle selection took %f s'%(time.clock()-start)
+
+    # set the render quantity 
+    qts *= mass/rhos
+
+    #
+    # bin particles by how many pixels they need in their kernel
+    #
+    start = time.clock()
+    npix = 2.0*hs/dx
+    dbin = np.digitize(npix,np.arange(1,npix.max()))
+    dbin_sortind = dbin.argsort()
+    dbin_sorted = dbin[dbin_sortind]
+    xs,ys,zs,hs,qts = (xs[dbin_sortind],ys[dbin_sortind],zs[dbin_sortind],hs[dbin_sortind],qts[dbin_sortind])
+    if timing: print '<<< Bin sort done in %f'%(time.clock()-start)
+
+    # ---------------------
+    # process the particles 
+    # ---------------------
+    start = time.clock()
+    image += template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax)
+    if timing: print '<<< Rendering %d particles took %f s'%(len(xs),
+                                                             time.clock()-start)
+    
+    if timing: print '<<< Total time: %f s'%(time.clock()-time_init)
+
+    return image
+
 @autojit
 def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
     # ****************************************************
@@ -387,7 +450,7 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                                  kmax/2-k/2:kmax/2+k/2+1]
             kernel = kernel_func(kernel*i_max_d*2.0,1.0)
             kernel *= i_max_d*i_max_d*i_max_d
-#            print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
+            print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
         
             # --------------------------------------
             # determine thread particle distribution
@@ -531,8 +594,6 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
 
     return image, xs,ys,qts,hs
 
-#@jit(void(double[:],double[:],double[:],double[:],int32[:,:],double[:,:],double[:,:]))
-@autojit
 def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image):
 
     Ntiles = tiles_pix.shape[0]
@@ -654,7 +715,9 @@ def setup_template_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, de
     return image, dx, dy, x_start, y_start, ts, ds
 
 
-def template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug = False):
+
+
+def template_render_image_old(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug = False):
     from bisect import bisect
     zplane = 0.0
 
