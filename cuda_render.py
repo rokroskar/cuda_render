@@ -450,7 +450,7 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
 
     return image
 
-def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, debug = False):
+def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, sort_arr = None, timing = False):
     """
     CPU part of the SPH render code
     
@@ -476,66 +476,63 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
 
     zplane = 0.0
 
-
+    # ------------------------------------
     # trim particles based on image limits
+    # ------------------------------------
     start = time.clock()
-    ind = np.where((xs > xmin-2*hs) & (xs < xmax+2*hs) & 
-                   (ys > ymin-2*hs) & (ys < ymax+2*hs)) #&
-#                   (np.abs(zs-zplane) < 2*hs))[0]
-
-    print '<<< Initial particle selection took %f s'%(time.clock()-start)
-
+    ind = np.where((np.abs(zs-zplane) < 2*hs) & 
+                   (xs > xmin-2*hs) & (xs < xmax+2*hs) & 
+                   (ys > ymin-2*hs) & (ys < ymax+2*hs))[0]
     xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
+    if timing: print '<<< Initial particle selection took %f s'%(time.clock()-start)
+
     # set the render quantity 
-    qts = qts*mass/rhos
+    qts *= mass/rhos
 
-    # -----------------------------------------
-    # sort particles based on their kernel size
-    # -----------------------------------------
-
-    rec = np.rec.fromarrays([xs,ys,qts,hs])
+    #
+    # bin particles by how many pixels they need in their kernel
+    #
     start = time.clock()
-    rec.sort(order='f3')
-    print '<<< Sorting on smoothing length took %f'%(time.clock()-start)
+    npix = 2.0*hs/dx
+    dbin = np.digitize(npix,np.arange(1,npix.max()))
+    dbin_sortind = dbin.argsort()
+    dbin_sorted = dbin[dbin_sortind]
+    xs,ys,zs,hs,qts = (xs[dbin_sortind],ys[dbin_sortind],zs[dbin_sortind],hs[dbin_sortind],qts[dbin_sortind])
+    if timing: print '<<< Bin sort done in %f'%(time.clock()-start)
+    
+
 
     # -----------------------------------------------------------------
     # set up the image slices -- max. size is 100x100 pixels 
     # in this step only process particles that need kernels < 50 pixels
     # -----------------------------------------------------------------
     
-    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
     start = time.clock()
-    ind = np.searchsorted(rec.f3,[0.0,25.*dx/2.0])
-    print '<<< Sorted search took %f s'%(time.clock()-start)
-    
-    # --------------------------------------
-    # set up the kernels that will be needed
-    # --------------------------------------
+    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
+    if timing: print '<<< Tiles made in %f s'%(time.clock()-start)
 
     start = time.clock()
-    process_tiles(rec.f0[:ind[1]],
-                  rec.f1[:ind[1]],
-                  rec.f2[:ind[1]],
-                  rec.f3[:ind[1]],tiles_pix, tiles_physical,image)    
-    print '<<< Processing %d tiles with %d particles took %f s'%(len(tiles_pix), 
-                                                                 ind[1],time.clock()-start)
+    ind = np.searchsorted(hs,[0.0,25.*dx/2.0]) # indices of particles with 2h/dx < 50 pixels
+    if timing: print '<<< Sorted search took %f s'%(time.clock()-start)
+    
+    start = time.clock()
+    process_tiles(xs[:ind[1]],ys[:ind[1]],
+                  qts[:ind[1]],hs[:ind[1]],tiles_pix,tiles_physical,image)    
+    if timing: print '<<< Processing %d tiles with %d particles took %f s'%(len(tiles_pix),
+                                                                            ind[1],time.clock()-start)
     # --------------------------------------------------
     # process the particles with large smoothing lengths
     # --------------------------------------------------
     if ind[1] != len(xs) : 
         start = time.clock()
-        image += template_kernel_cpu(rec.f0[ind[1]:],
-                                    rec.f1[ind[1]:],
-                                    rec.f2[ind[1]:],
-                                    rec.f3[ind[1]:],
-                                    nx,ny,xmin,xmax,ymin,ymax)
-        print '<<< Processing %d particles with large smoothing lengths took %f s'%(len(xs)-ind[1],
-                                                                                    time.clock()-start)
-    
-    return image, rec, ind
+        image += template_kernel_cpu(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:],nx,ny,xmin,xmax,ymin,ymax)
+        if timing: print '<<< Processing %d particles with large smoothing lengths took %f s'%(len(xs)-ind[1],
+                                                                                               time.clock()-start)
 
-#@jit(void(double[:],double[:],double[:],double[:],int32[:,:],double[:,:],float32[:,:]))
-#@autojit
+    return image, xs,ys,qts,hs
+
+#@jit(void(double[:],double[:],double[:],double[:],int32[:,:],double[:,:],double[:,:]))
+@autojit
 def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image):
 
     Ntiles = tiles_pix.shape[0]
@@ -549,20 +546,22 @@ def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image):
         
         nx_tile = tile[1]-tile[0]+1
         ny_tile = tile[3]-tile[2]+1
-               
-        inds = np.where((xs > tile_xmin - 2*hs) & (xs < tile_xmax + 2*hs) & 
-                        (ys > tile_ymin - 2*hs) & (ys < tile_ymax + 2*hs))[0]                        
+         
+#        inds = np.arange(xs.shape[0])
+        inds = np.where((xs + 2*hs > tile_xmin) & (xs - 2*hs < tile_xmax) & 
+                        (ys + 2*hs > tile_ymin) & (ys - 2*hs < tile_ymax))[0]                      
+
      #   print '<<< Tile %d where took %f s'%(i,time.clock()-start)
  #       print 'Starting tile %d with %d particles'%(i,imax-imin)
         #print 'Tile limits: ',tile_p
 
         if inds.shape[0] > 0 : 
-            start = time.clock()
+#            start = time.clock()
             im_tile = template_kernel_cpu(xs[inds],ys[inds],qts[inds],hs[inds],
                                           nx_tile,ny_tile,tile_xmin,tile_xmax,tile_ymin,tile_ymax)
-            print '<<< Tile %d render took %f s'%(i,time.clock()-start)
             image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += im_tile
-            
+ #           if timing: print '<<< Tile %d render took %f s'%(i,time.clock()-start)
+
 
 @autojit
 def where_numba(x) : 
@@ -705,10 +704,10 @@ def template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, d
     return image, ts
     
     
-def test_template_render(s,nx,ny,xmin,xmax,qty='rho') : 
+def test_template_render(s,nx,ny,xmin,xmax,qty='rho',sort_arr = None, timing = False) : 
     start = time.clock()
     xs,ys,zs,hs,qts,mass,rhos = [s[arr] for arr in ['x','y','z','smooth',qty,'mass','rho']]
-    res = cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax)
+    res = cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,xmin,xmax,sort_arr=sort_arr, timing=timing)
     print '<<< Done after %f seconds'%(time.clock()-start)
     return res 
 
