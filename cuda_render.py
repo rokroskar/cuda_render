@@ -722,7 +722,7 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # set up the image slices -- max. size is 100x100 pixels 
     # in this step only process particles that need kernels < 40 pixels
     # tiles are 100x100 = 1e4 pixels x 4 bytes = 40k
-    # kernels are 40x40 pixels max = 6.4k
+    # kernels are 31x31 pixels max = 3844 bytes
     # max shared memory size is 48k
     # -----------------------------------------------------------------
     
@@ -731,13 +731,13 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     if timing: print '<<< Tiles made in %f s'%(time.clock()-start)
 
     start = time.clock()
-    ind = np.searchsorted(hs,[0.0,25.*dx/2.0]) # indices of particles with 2h/dx < 50 pixels
+    ind = np.searchsorted(hs,[0.0,15.*dx/2.0]) # indices of particles with 2h/dx < 50 pixels
     if timing: print '<<< Sorted search took %f s'%(time.clock()-start)
 
         
     start = time.clock()
-    process_tiles(xs[:ind[1]],ys[:ind[1]],
-                  qts[:ind[1]],hs[:ind[1]],tiles_pix,tiles_physical,image,timing)    
+    process_tiles_pycuda(xs[:ind[1]],ys[:ind[1]],
+                         qts[:ind[1]],hs[:ind[1]],tiles_pix,tiles_physical,image,timing)    
     if timing: print '<<< Processing %d tiles with %d particles took %f s'%(len(tiles_pix),
                                                                             ind[1],time.clock()-start)
     # --------------------------------------------------
@@ -749,7 +749,7 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
         if timing: print '<<< Processing %d particles with large smoothing lengths took %f s'%(len(xs)-ind[1],
                                                                                                time.clock()-start)
 
-    return image, xs,ys,qts,hs
+    return image, xs,ys,qts,hs,tiles_pix,tiles_physical
 
 def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=False):
     import pycuda.driver as drv
@@ -783,7 +783,7 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
     
     mod = SourceModule(code)
 
-    kernel = mod.get_function("template_kernel")
+    kernel = mod.get_function("tile_render_kernel")
    
     Ntiles = tiles_pix.shape[0]
     
@@ -797,7 +797,7 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
         tile_p = tiles_physical[i]
         
         xmin, xmax, ymin, ymax = tile
-        xmin_p, xmax_p, ymin_p, ymax_p  = tile_p[0],tile_p[1],tile_p[2],tile_p[3]
+        xmin_p, xmax_p, ymin_p, ymax_p  = tile_p
     
         nx_tile = xmax-xmin+1
         ny_tile = ymax-ymin+1
@@ -811,10 +811,13 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
             kmin = int(math.floor(hs.min()*2.0/dx*2.0))
             
             # make everything the right size
-            kmax,kmin,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax = map(np.int32,[kmax,kmin,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax])
+            kmax,kmin,xmin,xmax,ymin,ymax = map(np.int32,[kmax,kmin,xmin,xmax,ymin,ymax])
+            xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
 
-            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,drv.In(inds.astype(np.int32)),
-                   kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax,im_gpu,block=(10,1,1))
+            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,drv.In(inds.astype(np.int32)),np.int32(len(xs)),
+                   kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax,
+                   im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
+                   block=(1024,1,1))
 
            # template_kernel_gpu[1,64](d_xs,d_ys,d_qts,d_hs,
            #                           int32(kmax),int32(kmin),d_inds,
