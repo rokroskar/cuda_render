@@ -23,6 +23,17 @@ def kernel_func(d, h) :
    
     return f/(np.pi*h**3)
 
+@cuda.jit('float32(float32,float32)',device=True,inline=True)
+def cu_kernel_func(d, h) : 
+    f = 0.0
+    if d < 1 : 
+        f = 1.-(3./2)*d**2 + (3./4.)*d**3
+    elif d <= 2.0 :
+        f = 0.25*(2.-d)**3
+   
+    return f/(3.14159265359*h**3)
+
+
 @vectorize([double(double,double)])
 def kernel_func_norm(d, h) : 
     dnorm = d/h
@@ -51,7 +62,8 @@ def physical_to_pixel(xpos,xmin,dx) :
 def pixel_to_physical(xpix,x_start,dx) : 
     return dx*xpix+x_start
 
-@jit(double[:,:](double[:],double[:],double[:],double[:],double[:],double[:],double[:],int32,int32,double,double,double,double))
+#@jit(double[:,:](double[:],double[:],double[:],double[:],double[:],double[:],double[:],int32,int32,double,double,double,double))
+@autojit
 def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) : 
     MAX_D_OVER_H = 2.0
 
@@ -140,11 +152,11 @@ def start_image_render(s,nx,ny,xmin,xmax) :
 #                          #
 ############################
 
-@cuda.jit('int32(double,double,double)',nopython=True,device=True,inline=True)
+@cuda.jit('int32(float32,float32,float32)',nopython=True,device=True,inline=True)
 def cu_physical_to_pixel(xpos,xmin,dx) : 
     return int32((xpos-xmin)/dx)
 
-@cuda.jit('double(int32,double,double)',nopython=True, device=True, inline=True)
+@cuda.jit('float32(int32,float32,float32)',nopython=True, device=True, inline=True)
 def cu_pixel_to_physical(xpix,x_start,dx) : 
     return dx*xpix+x_start
 
@@ -192,12 +204,6 @@ def make_template(k) :
         
         return template
 
-@autojit
-def test(N):
-    return mod(Ntemplate,2)
-
-#@jit(float32[:,:](int32))
-#s1rt(0@autojit
 def cu_make_template(k) : 
     # total number of cells we need
     Ntotal = 1 + 4*k
@@ -238,15 +244,14 @@ def cu_make_template(k) :
     return template
 
 #
-@autojit(nopython=True)
+@cuda.jit('void(float32[:,:],float32,float32)',device=True)
 def cu_calculate_distance(template, dx, dy) : 
     side_length = template.shape[0]
     # where is the center position
     cen = side_length/2
-    
     for i in xrange(side_length) : 
         for j in xrange(side_length) : 
-            template[i,j] = sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
+            template[i,j] = math.sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
     
 
 @autojit
@@ -390,12 +395,9 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
 
 @autojit
 def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
-    # ****************************************************
-    # copy kernels to shared memory for faster access here
-    # ****************************************************
-
+    # ------------------
     # create local image 
-    # ** this will be done in shared memory **
+    # ------------------
     image = np.zeros((nx,ny),dtype=np.float)
 
     Npart = len(hs) 
@@ -513,26 +515,179 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
 
     return image
 
+ksize = 41
+
+@cuda.autojit
+def cuda_test() :
+    t = cuda.shared.array(shape=(ksize,ksize),dtype=float32)
+    dx = float32(1/100.)
+    cu_calculate_distance(t,dx,dx)
+
+#@cuda.jit('void(float32[:],float32[:],float32[:],float32[:],int32,int32,int32[:],float32,float32,float32,float32,int32,int32,int32,int32,float32[:,:])')
+@cuda.autojit
+def template_kernel_gpu(xs,ys,qts,hs,kmax,kmin,inds,t_xmin,t_xmax,t_ymin,t_ymax,xmin,xmax,ymin,ymax,global_image) : 
+    # ------------------
+    # create local image 
+    # ------------------
+    image = cuda.shared.array(shape=(100,100),dtype=float32)
+
+    Npart = inds.shape[0]
+
+    nx = xmax-xmin
+    ny = ymax-ymin
+    
+    dx = (t_xmax-t_xmin)/nx
+    dy = (t_ymax-t_ymin)/ny
+
+    
+    # ----------------------------------------------------
+    # determine which particles this thread should process
+    # ----------------------------------------------------
+    Nthreads = cuda.gridDim.x * cuda.blockDim.x
+    my_thread_id = cuda.grid(1)
+    
+    # ------------------------------
+    # start the loop through kernels
+    # ------------------------------
+    
+    # make sure kmin and kmax are odd
+    if not (kmax % 2) : kmax += 1
+    if not (kmin % 2) : kmin += 1
+    kmin = max(1,kmin)
+    
+    kernel_base = cuda.shared.array((ksize,ksize),dtype=float32)
+    #cu_calculate_distance(kernel_base,dx,dy)
+    cen = ksize/2
+    for i in xrange(ksize) : 
+        for j in xrange(ksize) : 
+            kernel_base[i,j] = math.sqrt(((i-cen)*dx)**2 + ((j-cen)*dy)**2)
+    
+    max_d_curr = 0.0
+    start_ind = 0
+    end_ind = 0
+    for k in xrange(kmin,kmax+2,2) : 
+        # ---------------------------------
+        # the max. distance for this kernel
+        # ---------------------------------
+        max_d_curr = dx*math.floor(k/2.0)
+        if max_d_curr < dx/2.0 : max_d_curr = dx/2.0
+
+        i_max_d = float32(1./max_d_curr)
+        # -------------------------------------------------
+        # find the chunk of particles that need this kernel
+        # -------------------------------------------------
+        j = start_ind
+        for j in xrange(start_ind,Npart) : 
+            if 2*hs[j] < max_d_curr : pass
+            else: break
+
+        end_ind = j
+        
+        Nper_kernel = end_ind-start_ind
+        
+        # -------------------------------------------------------------------------
+        # only continue with kernel generation if there are particles that need it!
+        # -------------------------------------------------------------------------
+        if Nper_kernel > 0 : 
+            kernel = kernel_base[kmax/2-k/2:kmax/2+k/2+1,
+                                 kmax/2-k/2:kmax/2+k/2+1]
+            for i in xrange(kernel.shape[0]) : 
+                for j in xrange(kernel.shape[0]) : 
+                    kernel[i,j] = cu_kernel_func(kernel[i,j],float32(1.0))*i_max_d**3
+                                
+            # --------------------------------------
+            # determine thread particle distribution
+            # --------------------------------------
+            Nper_thread = Nper_kernel/Nthreads
+            n_start = Nper_thread*my_thread_id+start_ind
+
+            # if this is the last thread, make it pick up the slack
+            n_end = end_ind
+            if my_thread_id == Nthreads-1 : 
+                n_end = end_ind
+            else : 
+                n_end = Nper_thread*(my_thread_id+1)+n_start
+                    
+            # all threads have their particle indices figured out, increment for next iteration
+            start_ind = end_ind
+
+            # ------------------------
+            # synchronize threads here
+            # ------------------------
+        
+            cuda.syncthreads()
+        
+            # --------------------------------
+            # paint each particle on the image
+            # --------------------------------
+            for pind in xrange(n_start,n_end) : 
+                x = float32(xs[inds[pind]])
+                y = float32(ys[inds[pind]])
+                h = float32(hs[inds[pind]])
+                qt = float32(qts[inds[pind]])
+                
+                # set the minimum h to be equal to half pixel width
+                #                h = max_d_curr*.5
+                #h = max(h,0.55*dx)
+                
+                # particle pixel center
+                xpos = cu_physical_to_pixel(x,xmin,dx)
+                ypos = cu_physical_to_pixel(y,ymin,dy)
+    
+                left  = xpos-k/2
+                right = xpos+k/2+1
+                upper = ypos-k/2
+                lower = ypos+k/2+1
+
+                ker_left = abs(min(left,0))
+                ker_right = k + min(nx-right,0)
+                ker_upper = abs(min(upper,0))
+                ker_lower = k + min(ny-lower,0)
+
+                im_left = max(left,0)
+                im_right = min(right,nx)
+                im_upper = max(upper,0)
+                im_lower = min(lower,nx)
+
+                for i in xrange(0,k):
+                    for j in xrange(0,k):
+                        ker_val = float32(kernel[i,j]*qt)
+                        if (i+left > 0) and (i <  nx) and (j + upper > 0) and (j < ny) : 
+                            image[i+left,j+upper] = image[i+left,j+upper] + ker_val
+            
+            # --------------------------------
+            # check if we have reached the end
+            # --------------------------------
+            if end_ind == Npart-1 : 
+                break
+
+    cuda.syncthreads()
+    # -------------------
+    # update global image
+    # -------------------
+    if my_thread_id == 0:
+        for i in xrange(0,nx) : 
+            for j in xrange(0,ny) : 
+                global_image[i+xmin,j+ymin] = global_image[i+xmin,j+ymin] + image[i,j]
+    
+
+                
+                
+
 def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax, sort_arr = None, timing = False):
     """
-    CPU part of the SPH render code
+    CPU part of the SPH render code that executes the rendering on the GPU
     
     does some basic particle set prunning and sets up the image
     tiles. It launches cuda kernels for rendering the individual sections of the image
     """
-    
-    from bisect import bisect
-
     # ----------------------
     # setup the global image
     # ----------------------
-    #image,dx,dy,x_start,y_start,pix_kernels,ds,ks=setup_template_image(xs,ys,zs,hs,qts,mass,rhos,
-     #nx,ny,xmin,xmax,ymin,ymax,debug)
+    image = np.zeros((nx,ny),dtype=np.float32)
     
-    image = np.zeros((nx,ny))
-    
-    dx = (xmax-xmin)/nx
-    dy = (ymax-ymin)/ny
+    dx = float32((xmax-xmin)/nx)
+    dy = float32((ymax-ymin)/ny)
     
     x_start = xmin+dx/2
     y_start = ymin+dy/2
@@ -563,11 +718,12 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     xs,ys,zs,hs,qts = (xs[dbin_sortind],ys[dbin_sortind],zs[dbin_sortind],hs[dbin_sortind],qts[dbin_sortind])
     if timing: print '<<< Bin sort done in %f'%(time.clock()-start)
     
-
-
     # -----------------------------------------------------------------
     # set up the image slices -- max. size is 100x100 pixels 
-    # in this step only process particles that need kernels < 50 pixels
+    # in this step only process particles that need kernels < 40 pixels
+    # tiles are 100x100 = 1e4 pixels x 4 bytes = 40k
+    # kernels are 40x40 pixels max = 6.4k
+    # max shared memory size is 48k
     # -----------------------------------------------------------------
     
     start = time.clock()
@@ -577,10 +733,11 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     start = time.clock()
     ind = np.searchsorted(hs,[0.0,25.*dx/2.0]) # indices of particles with 2h/dx < 50 pixels
     if timing: print '<<< Sorted search took %f s'%(time.clock()-start)
-    
+
+        
     start = time.clock()
     process_tiles(xs[:ind[1]],ys[:ind[1]],
-                  qts[:ind[1]],hs[:ind[1]],tiles_pix,tiles_physical,image)    
+                  qts[:ind[1]],hs[:ind[1]],tiles_pix,tiles_physical,image,timing)    
     if timing: print '<<< Processing %d tiles with %d particles took %f s'%(len(tiles_pix),
                                                                             ind[1],time.clock()-start)
     # --------------------------------------------------
@@ -594,35 +751,131 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
 
     return image, xs,ys,qts,hs
 
-def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image):
+def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=False):
+    import pycuda.driver as drv
+    import pycuda.tools
+    import pycuda.autoinit
+    from pycuda.compiler import SourceModule
+    
+    # -----------------------------------------
+    # set up streams and transfer particle data
+    # -----------------------------------------
+    start = time.clock()
 
+    xs_gpu = drv.mem_alloc(xs.astype(np.float32).nbytes)
+    drv.memcpy_htod(xs_gpu,xs.astype(np.float32))
+    
+    ys_gpu = drv.mem_alloc(ys.astype(np.float32).nbytes)
+    drv.memcpy_htod(ys_gpu,ys.astype(np.float32))
+    
+    qts_gpu = drv.mem_alloc(qts.astype(np.float32).nbytes)
+    drv.memcpy_htod(qts_gpu,qts.astype(np.float32))
+    
+    hs_gpu = drv.mem_alloc(hs.astype(np.float32).nbytes)
+    drv.memcpy_htod(hs_gpu,hs.astype(np.float32))
+    
+    im_gpu = drv.mem_alloc(image.astype(np.float32).nbytes)
+    drv.memcpy_htod(im_gpu,image.astype(np.float32))
+
+    if timing: print "<<< Data transfer to device took %f s"%(time.clock()-start)
+
+    code = file('/home/itp/roskar/homegrown/template_kernel.cu').read()
+    
+    mod = SourceModule(code)
+
+    kernel = mod.get_function("template_kernel")
+   
     Ntiles = tiles_pix.shape[0]
+    
+    dx = (tiles_physical[0][1] - tiles_physical[0][0])/(tiles_pix[0][1] - tiles_pix[0][0])
+    dy = (tiles_physical[0][3] - tiles_physical[0][2])/(tiles_pix[0][3] - tiles_pix[0][2])
+    
 
     for i in xrange(Ntiles) :
         
         tile   = tiles_pix[i]
         tile_p = tiles_physical[i]
-
-        tile_xmin, tile_xmax, tile_ymin, tile_ymax  = tile_p[0],tile_p[1],tile_p[2],tile_p[3]
         
-        nx_tile = tile[1]-tile[0]+1
-        ny_tile = tile[3]-tile[2]+1
+        xmin, xmax, ymin, ymax = tile
+        xmin_p, xmax_p, ymin_p, ymax_p  = tile_p[0],tile_p[1],tile_p[2],tile_p[3]
+    
+        nx_tile = xmax-xmin+1
+        ny_tile = ymax-ymin+1
          
-#        inds = np.arange(xs.shape[0])
-        inds = np.where((xs + 2*hs > tile_xmin) & (xs - 2*hs < tile_xmax) & 
-                        (ys + 2*hs > tile_ymin) & (ys - 2*hs < tile_ymax))[0]                      
-
-     #   print '<<< Tile %d where took %f s'%(i,time.clock()-start)
- #       print 'Starting tile %d with %d particles'%(i,imax-imin)
-        #print 'Tile limits: ',tile_p
+        inds = np.where((xs + 2*hs > xmin_p) & (xs - 2*hs < xmax_p) & 
+                        (ys + 2*hs > ymin_p) & (ys - 2*hs < ymax_p))[0]                     
 
         if inds.shape[0] > 0 : 
-#            start = time.clock()
-            im_tile = template_kernel_cpu(xs[inds],ys[inds],qts[inds],hs[inds],
-                                          nx_tile,ny_tile,tile_xmin,tile_xmax,tile_ymin,tile_ymax)
-            image[tile[0]:tile[1]+1,tile[2]:tile[3]+1] += im_tile
- #           if timing: print '<<< Tile %d render took %f s'%(i,time.clock()-start)
+            start = time.clock()
+            kmax = int(math.ceil(hs.max()*2.0/dx*2.0))+1
+            kmin = int(math.floor(hs.min()*2.0/dx*2.0))
+            
+            # make everything the right size
+            kmax,kmin,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax = map(np.int32,[kmax,kmin,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax])
 
+            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,drv.In(inds.astype(np.int32)),
+                   kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax,im_gpu,block=(10,1,1))
+
+           # template_kernel_gpu[1,64](d_xs,d_ys,d_qts,d_hs,
+           #                           int32(kmax),int32(kmin),d_inds,
+           #                           float32(xmin_p),float32(xmax_p),float32(ymin_p),float32(ymax_p),
+           #                           int32(xmin),int32(xmax),int32(ymin),int32(ymax),d_im)
+            
+            if timing: print '<<< Tile %d render took %f s'%(i,time.clock()-start)
+
+
+#    cuda.synchronize()
+#    d_im.to_host()
+
+def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=False):
+    # -----------------------------------------
+    # set up streams and transfer particle data
+    # -----------------------------------------
+    start = time.clock()
+    d_xs = cuda.to_device(xs.astype(np.float32))
+    d_ys = cuda.to_device(ys.astype(np.float32))
+    d_hs = cuda.to_device(hs.astype(np.float32))
+    d_qts = cuda.to_device(qts.astype(np.float32))
+    d_im = cuda.to_device(np.float32(image))
+    if timing: print "<<< Data transfer to device took %f s"%(time.clock()-start)
+
+    Ntiles = tiles_pix.shape[0]
+    
+    dx = (tiles_physical[0][1] - tiles_physical[0][0])/(tiles_pix[0][1] - tiles_pix[0][0])
+    dy = (tiles_physical[0][3] - tiles_physical[0][2])/(tiles_pix[0][3] - tiles_pix[0][2])
+    
+
+    for i in xrange(Ntiles) :
+        
+        tile   = tiles_pix[i]
+        tile_p = tiles_physical[i]
+        
+        xmin, xmax, ymin, ymax = tile
+        xmin_p, xmax_p, ymin_p, ymax_p  = tile_p[0],tile_p[1],tile_p[2],tile_p[3]
+    
+        nx_tile = xmax-xmin+1
+        ny_tile = ymax-ymin+1
+         
+        inds = np.where((xs + 2*hs > xmin_p) & (xs - 2*hs < xmax_p) & 
+                        (ys + 2*hs > ymin_p) & (ys - 2*hs < ymax_p))[0]                     
+
+        if inds.shape[0] > 0 : 
+            start = time.clock()
+            d_inds = cuda.to_device(inds)
+            kmax = int(math.ceil(hs.max()*2.0/dx*2.0))+1
+            kmin = int(math.floor(hs.min()*2.0/dx*2.0))
+
+            template_kernel_gpu[1,64](d_xs,d_ys,d_qts,d_hs,
+                                      int32(kmax),int32(kmin),d_inds,
+                                      float32(xmin_p),float32(xmax_p),float32(ymin_p),float32(ymax_p),
+                                      int32(xmin),int32(xmax),int32(ymin),int32(ymax),d_im)
+            
+            if timing: print '<<< Tile %d render took %f s'%(i,time.clock()-start)
+            del(d_inds)
+            del(inds)
+
+    cuda.synchronize()
+    d_im.to_host()
 
 @autojit
 def where_numba(x) : 
