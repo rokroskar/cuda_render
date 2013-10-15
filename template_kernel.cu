@@ -28,7 +28,7 @@ __device__ void kernel_func(float *kernel, float h, float max_d)
     
       for(int i=my_start;i<my_end;i++) 
         {
-          d = kernel[i]/max_d;
+          d = kernel[i]/(max_d/2.0);
           kernel[i] = 0.0;
           if(d < 1) kernel[i] = (1.-(3./2)*(d*d) + (3./4.)*(d*d*d))*PI_I/(h*h*h);
           else if (d <= 2.0) kernel[i] = 0.25*powf((2.-d),3)*PI_I/(h*h*h); 
@@ -107,9 +107,9 @@ __device__ void update_image(float *global, float *local, int x_offset, int y_of
   
   for(int p = my_start; p < my_end; p++) 
     {
-      loc_x = p/nx_loc;
-      loc_y = p - loc_x*nx_loc;
-      global[nx_glob*(loc_x+x_offset) + loc_y+y_offset] += local[p];
+      loc_y = p/nx_loc;
+      loc_x = p - loc_y*nx_loc;
+      global[(loc_x+x_offset) + (loc_y+y_offset)*nx_glob] += local[p];
     }
 }
 
@@ -154,6 +154,8 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   if (!(kmax % 2)) kmax += 1;
   if (!(kmin % 2)) kmin += 1;
   kmin = (kmin>1) ? kmin : 1;
+
+  for(i=0;i<IMAGE_SIZE;i++) local_image[i]=0.0;
   
   for(int k=kmin; k < kmax+2; k+=2) 
     {
@@ -224,34 +226,27 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
                 
                 left = xpos-k/2;
                 upper = ypos-k/2;
-                if (k==3) printf("%f %f\n", x, y);
-                for(i = (KSIZE-k)/2; i < KSIZE-(KSIZE-k)/2; i++) 
+                
+                for(i = 0; i < k; i++) 
                   {
-                    for(j = (KSIZE-k)/2; j < KSIZE -(KSIZE-k)/2; j++) 
+                    for(j = 0; j < k; j++) 
                       {
                         if((i+left > 0) && (i+left < nx) &&
                            (j+upper > 0) && (j+upper < ny))
                           {
-                            ker_val = kernel[i+KSIZE*j]*qt*i_h_cb;
+                            ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
                             loc_val = local_image[(i+left)+(j+upper)*nx];
                             local_image[(i+left)+(j+upper)*nx] = loc_val + ker_val;
-                            if (k==3) printf("%d %d %d %d %f  ",i,j,i+left,j+upper,ker_val);
                           }
                       }
-                    if(k==3)printf("\n");
                   }
               }
           }
-        if (end_ind == Npart-1) break;
     }
   __syncthreads();
   /* update global image */
-  //update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
-  if (idx == 0) 
-    {
-      for(i=0;i<100*100;i++) global_image[i] = local_image[i];
-    }
-    
+  update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
+  //  for(i=0;i<IMAGE_SIZE;i++) global_image[i] += local_image[i];
 }
 
 
