@@ -361,8 +361,8 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
     # ------------------------------------
     start = time.clock()
     ind = np.where((xs + 2*hs > xmin) & (xs - 2*hs < xmax) & 
-                   (ys + 2*hs > ymin) & (ys - 2*hs < ymax))[0]
-#    (np.abs(zs-zplane) < 2*hs) & 
+                   (ys + 2*hs > ymin) & (ys - 2*hs < ymax) &
+                   (np.abs(zs-zplane) < 2*hs))[0]
 
     xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
     if timing: print '<<< Initial particle selection took %f s'%(time.clock()-start)
@@ -393,7 +393,7 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
 
     return image
 
-@autojit
+#@autojit
 def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
     # ------------------
     # create local image 
@@ -514,8 +514,6 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                 break
 
     return image
-
-ksize = 41
 
 #@cuda.autojit
 def cuda_test() :
@@ -731,11 +729,12 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     if timing: print '<<< Tiles made in %f s'%(time.clock()-start)
 
     start = time.clock()
-    ind = np.searchsorted(hs,[0.0,15.*dx/2.0]) # indices of particles with 2h/dx < 50 pixels
+    ind = np.searchsorted(hs,[0.0,15.*dx/2.0]) # indices of particles with 2h/dx < 30 pixels
     if timing: print '<<< Sorted search took %f s'%(time.clock()-start)
 
         
     start = time.clock()
+    
     process_tiles_pycuda(xs[:ind[1]],ys[:ind[1]],
                          qts[:ind[1]],hs[:ind[1]],tiles_pix,tiles_physical,image,timing)    
     if timing: print '<<< Processing %d tiles with %d particles took %f s'%(len(tiles_pix),
@@ -748,7 +747,6 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
         image += template_kernel_cpu(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:],nx,ny,xmin,xmax,ymin,ymax)
         if timing: print '<<< Processing %d particles with large smoothing lengths took %f s'%(len(xs)-ind[1],
                                                                                                time.clock()-start)
-
     return image, xs,ys,qts,hs,tiles_pix,tiles_physical
 
 def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=False):
@@ -795,7 +793,7 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
         
         tile   = tiles_pix[i]
         tile_p = tiles_physical[i]
-        
+        print tile, tile_p
         xmin, xmax, ymin, ymax = tile
         xmin_p, xmax_p, ymin_p, ymax_p  = tile_p
     
@@ -814,7 +812,7 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
             kmax,kmin,xmin,xmax,ymin,ymax = map(np.int32,[kmax,kmin,xmin,xmax,ymin,ymax])
             xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
 
-            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,drv.In(inds.astype(np.int32)),np.int32(len(xs)),
+            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,drv.In(inds.astype(np.int32)),np.int32(len(inds)),
                    kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax,
                    im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
                    block=(1,1,1))
@@ -823,7 +821,7 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
     
     drv.Context.synchronize()
     drv.memcpy_dtoh(image,im_gpu)
-    
+
 
 def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=False):
     # -----------------------------------------
