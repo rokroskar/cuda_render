@@ -517,14 +517,14 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
 
 ksize = 41
 
-@cuda.autojit
+#@cuda.autojit
 def cuda_test() :
     t = cuda.shared.array(shape=(ksize,ksize),dtype=float32)
     dx = float32(1/100.)
     cu_calculate_distance(t,dx,dx)
 
 #@cuda.jit('void(float32[:],float32[:],float32[:],float32[:],int32,int32,int32[:],float32,float32,float32,float32,int32,int32,int32,int32,float32[:,:])')
-@cuda.autojit
+#@cuda.autojit
 def template_kernel_gpu(xs,ys,qts,hs,kmax,kmin,inds,t_xmin,t_xmax,t_ymin,t_ymax,xmin,xmax,ymin,ymax,global_image) : 
     # ------------------
     # create local image 
@@ -817,18 +817,13 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
             kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,drv.In(inds.astype(np.int32)),np.int32(len(xs)),
                    kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax,
                    im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
-                   block=(1024,1,1))
+                   block=(1,1,1))
 
-           # template_kernel_gpu[1,64](d_xs,d_ys,d_qts,d_hs,
-           #                           int32(kmax),int32(kmin),d_inds,
-           #                           float32(xmin_p),float32(xmax_p),float32(ymin_p),float32(ymax_p),
-           #                           int32(xmin),int32(xmax),int32(ymin),int32(ymax),d_im)
-            
             if timing: print '<<< Tile %d render took %f s'%(i,time.clock()-start)
-
-
-#    cuda.synchronize()
-#    d_im.to_host()
+    
+    drv.Context.synchronize()
+    drv.memcpy_dtoh(image,im_gpu)
+    
 
 def process_tiles(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=False):
     # -----------------------------------------
