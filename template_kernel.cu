@@ -103,7 +103,7 @@ __device__ void update_image(float *global, float *local, int x_offset, int y_of
   my_start = idx*pix_per_thread;
   my_end = my_start + pix_per_thread;
   // if this is the last thread, make it take the rest of the pixels
-  if (blockIdx.x == blockDim.x-1) my_end = nx_loc*ny_loc;
+  if (idx == blockDim.x*blockIdx.x-1) my_end = nx_loc*ny_loc;
   
   for(int p = my_start; p < my_end; p++) 
     {
@@ -182,8 +182,6 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
       Nper_kernel = end_ind-start_ind;
 
 
-      printf("Processing %d particles for k = %d max_d = %f\n", Nper_kernel, k, max_d_curr);
-        
       /*-------------------------------------------------------------------------
         only continue with kernel generation if there are particles that need it!
         -------------------------------------------------------------------------*/
@@ -230,8 +228,8 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
                 {
                   for(j = 0; j < k; j++) 
                     {
-                      if((i+left > 0) && (i+left < nx) &&
-                         (j+upper > 0) && (j+upper < ny))
+                      if((i+left >= 0) && (i+left < nx) &&
+                         (j+upper >= 0) && (j+upper < ny))
                         {
                           ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
                           loc_val = local_image[(i+left)+(j+upper)*nx];
@@ -245,7 +243,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
-  //  for(i=0;i<IMAGE_SIZE;i++) global_image[i] += local_image[i];
+  //if (idx==0) for(i=0;i<IMAGE_SIZE;i++) global_image[i] += local_image[i];
 }
 
 
