@@ -445,7 +445,7 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                                  kmax/2-k/2:kmax/2+k/2+1]
             kernel = kernel_func(kernel*i_max_d*2.0,1.0)
             kernel *= 8*i_max_d*i_max_d*i_max_d # kernel / h**3
-            print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
+           # print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
         
             # --------------------------------
             # paint each particle on the image
@@ -662,7 +662,7 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # trim particles based on image limits
     # ------------------------------------
     start = time.clock()
-    ind = np.where((np.abs(zs-zplane) < 2*hs) & 
+    ind = np.where(#(np.abs(zs-zplane) < 2*hs) & 
                    (xs > xmin-2*hs) & (xs < xmax+2*hs) & 
                    (ys > ymin-2*hs) & (ys < ymax+2*hs))[0]
     xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
@@ -755,6 +755,8 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
     dy = (tiles_physical[0][3] - tiles_physical[0][2])/(tiles_pix[0][3] - tiles_pix[0][2])
     
 
+    streams = []
+
     for i in xrange(Ntiles) :
         
         tile   = tiles_pix[i]
@@ -771,17 +773,25 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
 
         if inds.shape[0] > 0 : 
             start = time.clock()
+
+            newstream = drv.Stream()
+            streams.append(newstream)
+
+
             kmax = int(math.ceil(hs.max()*2.0/dx*2.0))+1
             kmin = int(math.floor(hs.min()*2.0/dx*2.0))
             
             # make everything the right size
             kmax,kmin,xmin,xmax,ymin,ymax = map(np.int32,[kmax,kmin,xmin,xmax,ymin,ymax])
             xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
+            
+            inds_gpu = drv.mem_alloc(inds.astype(np.int32).nbytes)
+            drv.memcpy_htod_async(inds_gpu,inds.astype(np.int32),stream=newstream)
 
-            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,drv.In(inds.astype(np.int32)),np.int32(len(inds)),
+            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,inds_gpu,np.int32(len(inds)),
                    kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin,xmax,ymin,ymax,
                    im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
-                   block=(1,1,1))
+                   block=(32,1,1),stream=newstream)
 
             if timing: print '<<< Tile %d render took %f s'%(i,time.clock()-start)
     

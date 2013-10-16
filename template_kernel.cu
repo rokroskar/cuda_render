@@ -157,6 +157,8 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
 
   for(i=0;i<IMAGE_SIZE;i++) local_image[i]=0.0;
   
+  if (idx==0) printf("max/min = %d %d\n", xmax, xmin);
+
   for(int k=kmin; k < kmax+2; k+=2) 
     {
       // set up the base kernel
