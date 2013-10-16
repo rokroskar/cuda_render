@@ -710,7 +710,7 @@ def cu_template_render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax
     # --------------------------------------------------
     if ind[1] != len(xs) : 
         start = time.clock()
-        image += template_kernel_cpu(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:],nx,ny,xmin,xmax,ymin,ymax)
+        image += (template_kernel_cpu(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:],nx,ny,xmin,xmax,ymin,ymax)).T
         if timing: print '<<< Processing %d particles with large smoothing lengths took %f s'%(len(xs)-ind[1],
                                                                                                time.clock()-start)
     return image, xs,ys,qts,hs,tiles_pix,tiles_physical
@@ -759,15 +759,15 @@ def process_tiles_pycuda(xs,ys,qts,hs,tiles_pix,tiles_physical,image,timing=Fals
         
         tile   = tiles_pix[i]
         tile_p = tiles_physical[i]
-        print tile, tile_p
+    
         xmin, xmax, ymin, ymax = tile
         xmin_p, xmax_p, ymin_p, ymax_p  = tile_p
     
         nx_tile = xmax-xmin+1
         ny_tile = ymax-ymin+1
          
-        inds = np.where((xs + 2*hs > xmin_p) & (xs - 2*hs < xmax_p) & 
-                        (ys + 2*hs > ymin_p) & (ys - 2*hs < ymax_p))[0]                     
+        inds = np.where((xs + 2*hs >= xmin_p) & (xs - 2*hs <= xmax_p) & 
+                        (ys + 2*hs >= ymin_p) & (ys - 2*hs <= ymax_p))[0]                     
 
         if inds.shape[0] > 0 : 
             start = time.clock()
