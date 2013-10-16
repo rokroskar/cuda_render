@@ -385,7 +385,7 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
     # process the particles 
     # ---------------------
     start = time.clock()
-    image += template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax)
+    image = template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax)
     if timing: print '<<< Rendering %d particles took %f s'%(len(xs),
                                                              time.clock()-start)
     
@@ -393,7 +393,7 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
 
     return image
 
-#@autojit
+@autojit
 def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
     # ------------------
     # create local image 
@@ -405,10 +405,6 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
     dy = (ymax-ymin)/ny
 
        
-    # determine which particles this thread should process
-    Nthreads = 1#cuda.gridDim.x * cuda.blockDim.x
-    my_thread_id = 0#cuda.grid(1)
-    
     # ------------------------------
     # start the loop through kernels
     # ------------------------------
@@ -420,7 +416,6 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
     kmin = max(1,kmin)
     kernel_base = np.ones((kmax,kmax))
     calculate_distance(kernel_base,dx,dy)
-#    print 'KMAX, KMIN', kmax, kmin
     
     max_d_curr = 0.0
     start_ind = 0
@@ -436,11 +431,9 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
         # -------------------------------------------------
         # find the chunk of particles that need this kernel
         # -------------------------------------------------
-        for j in xrange(start_ind,Npart) : 
-            if 2*hs[j] < max_d_curr : pass
+        for end_ind in xrange(start_ind,Npart) : 
+            if 2*hs[end_ind] < max_d_curr : pass
             else: break
-
-        end_ind = j
         
         Nper_kernel = end_ind-start_ind
         
@@ -451,37 +444,13 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
             kernel = kernel_base[kmax/2-k/2:kmax/2+k/2+1,
                                  kmax/2-k/2:kmax/2+k/2+1]
             kernel = kernel_func(kernel*i_max_d*2.0,1.0)
-            kernel *= i_max_d*i_max_d*i_max_d
+            kernel *= 8*i_max_d*i_max_d*i_max_d # kernel / h**3
             print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
-        
-            # --------------------------------------
-            # determine thread particle distribution
-            # --------------------------------------
-            Nper_thread = Nper_kernel/Nthreads
-            n_start = Nper_thread*my_thread_id+start_ind
-
-            # if this is the last thread, make it pick up the slack
-            if my_thread_id == Nthreads-1 : 
-                n_end = end_ind
-            else : 
-                n_end = Nper_thread*(my_thread_id+1)+n_start
-                    
-            # all threads have their particle indices figured out, increment for next iteration
-            start_ind = end_ind
-
-            # print 'nperthread = ', Nper_thread, 'n_start = ', n_start, 'n_end = ', n_end
-                #print 'Thread %d processing %d particles for k = %d'%(my_thread_id,n_end-n_start,k)
-
-            # ------------------------
-            # synchronize threads here
-            # ------------------------
-        
-            # cuda.syncthreads()
         
             # --------------------------------
             # paint each particle on the image
             # --------------------------------
-            for pind in xrange(n_start,n_end) : 
+            for pind in xrange(start_ind,end_ind) : 
                 x,y,h,qt = [xs[pind],ys[pind],hs[pind],qts[pind]]
                 
                 # set the minimum h to be equal to half pixel width
@@ -502,16 +471,13 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                 ker_upper = abs(min(upper,0))
                 ker_lower = k + min(ny-lower,0)
                 
-                ker_val = kernel[ker_left:ker_right,ker_upper:ker_lower]
-                ker_val *= qt
+                ker_val = (kernel[ker_left:ker_right,ker_upper:ker_lower]).copy()
+                ker_val = qt*ker_val
 
                 image[max(left,0):min(right,nx),max(upper,0):min(lower,nx)] += ker_val 
-            
-            # --------------------------------
-            # check if we have reached the end
-            # --------------------------------
-            if end_ind == Npart-1 : 
-                break
+                
+
+            start_ind = end_ind
 
     return image
 
