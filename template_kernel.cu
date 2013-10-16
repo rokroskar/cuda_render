@@ -175,73 +175,72 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
          ------------------------------------------------- */
       
       /* DO THIS SEARCH IN PARALLEL */
-
-      for(j=start_ind;j<Npart;j++) { 
-        if (2*hs[j] < max_d_curr) continue;
+      for(end_ind=start_ind;end_ind<Npart;) { 
+        if (2*hs[inds[end_ind]] < max_d_curr) end_ind++;
         else break;
       }
-        end_ind = j;
-        
-        Nper_kernel = end_ind-start_ind;
+      Nper_kernel = end_ind-start_ind;
 
+
+      printf("Processing %d particles for k = %d max_d = %f\n", Nper_kernel, k, max_d_curr);
         
-        /*-------------------------------------------------------------------------
-          only continue with kernel generation if there are particles that need it!
-          -------------------------------------------------------------------------*/
-        if (Nper_kernel > 0) 
-          {
-            kernel_func(kernel,1.0,max_d_curr);
-            i_h_cb = 8.*i_max_d*i_max_d*i_max_d;
-            
-            /* --------------------------------------
-               determine thread particle distribution
-               --------------------------------------*/
-            Nper_thread = Nper_kernel/Nthreads;
-            my_start = Nper_thread*idx+start_ind;
-        
-            // if this is the last thread, make it pick up the slack
+      /*-------------------------------------------------------------------------
+        only continue with kernel generation if there are particles that need it!
+        -------------------------------------------------------------------------*/
+      if (Nper_kernel > 0) 
+        {
+          kernel_func(kernel,1.0,max_d_curr);
+          i_h_cb = 8.*i_max_d*i_max_d*i_max_d;
+          
+          /* --------------------------------------
+             determine thread particle distribution
+             --------------------------------------*/
+          Nper_thread = Nper_kernel/Nthreads;
+          my_start = Nper_thread*idx+start_ind;
+          
+          // if this is the last thread, make it pick up the slack
+          my_end = end_ind;
+          if (idx == Nthreads-1) 
             my_end = end_ind;
-            if (idx == Nthreads-1) 
-              my_end = end_ind;
-            else 
-              my_end = Nper_thread+my_start;
-                    
-            //all threads have their particle indices figured out, increment for next iteration
-            start_ind = end_ind;
-            
-            /*
-              paint each particle on the local image
-            */
-            __syncthreads();
-            
-            for (pind=my_start;pind<my_end;pind++)
-              {
-                x = xs[inds[pind]];
-                y = ys[inds[pind]];
-                //h = hs[inds[pind]];
-                qt = qts[inds[pind]];
-                
-                xpos = __float2int_rd((x-xmin_p)/dx);
-                ypos = __float2int_rd((y-ymin_p)/dy);
-                
-                left = xpos-k/2;
-                upper = ypos-k/2;
-                
-                for(i = 0; i < k; i++) 
-                  {
-                    for(j = 0; j < k; j++) 
-                      {
-                        if((i+left > 0) && (i+left < nx) &&
-                           (j+upper > 0) && (j+upper < ny))
-                          {
-                            ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
-                            loc_val = local_image[(i+left)+(j+upper)*nx];
-                            local_image[(i+left)+(j+upper)*nx] = loc_val + ker_val;
-                          }
-                      }
-                  }
-              }
-          }
+          else 
+            my_end = Nper_thread+my_start;
+          
+          //all threads have their particle indices figured out, increment for next iteration
+          start_ind = end_ind;
+          
+          /*
+            paint each particle on the local image
+          */
+          __syncthreads();
+          
+          for (pind=my_start;pind<my_end;pind++)
+            {
+              x = xs[inds[pind]];
+              y = ys[inds[pind]];
+              //h = hs[inds[pind]];
+              qt = qts[inds[pind]];
+              
+              xpos = __float2int_rd((x-xmin_p)/dx);
+              ypos = __float2int_rd((y-ymin_p)/dy);
+              
+              left = xpos-k/2;
+              upper = ypos-k/2;
+              
+              for(i = 0; i < k; i++) 
+                {
+                  for(j = 0; j < k; j++) 
+                    {
+                      if((i+left > 0) && (i+left < nx) &&
+                         (j+upper > 0) && (j+upper < ny))
+                        {
+                          ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
+                          loc_val = local_image[(i+left)+(j+upper)*nx];
+                          local_image[(i+left)+(j+upper)*nx] = loc_val + ker_val;
+                        }
+                    }
+                }
+            }
+        }
     }
   __syncthreads();
   /* update global image */
