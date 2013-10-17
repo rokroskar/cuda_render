@@ -11,6 +11,50 @@ import pynbody
 import scipy.integrate as integrate
 import math
 import time
+import bisect
+
+
+@autojit
+def bisect_left(a, x, lo, hi):
+    """Return the index where to insert item x in list a, assuming a is sorted.
+
+    The return value i is such that all e in a[:i] have e < x, and all e in
+    a[i:] have e >= x.  So if x already appears in the list, a.insert(x) will
+    insert just before the leftmost x already there.
+
+    Optional args lo (default 0) and hi (default len(a)) bound the
+    slice of a to be searched.
+    """
+
+    while lo < hi:
+        mid = (lo+hi)//2
+        if a[mid] < x: lo = mid+1
+        else: hi = mid
+    return lo
+
+@autojit
+def for_find(a,x,lo,hi) : 
+    for i in xrange(lo,hi) : 
+        if a[i] < x : pass
+        else: return i
+
+@autojit
+def bisect_right(a, x, lo, hi):
+    """Return the index where to insert item x in list a, assuming a is sorted.
+
+    The return value i is such that all e in a[:i] have e <= x, and all e in
+    a[i:] have e > x.  So if x already appears in the list, a.insert(x) will
+    insert just after the rightmost x already there.
+
+    Optional args lo (default 0) and hi (default len(a)) bound the
+    slice of a to be searched.
+    """
+
+    while lo < hi:
+        mid = (lo+hi)//2
+        if x < a[mid]: hi = mid
+        else: lo = mid+1
+    return lo
 
 @vectorize(['double(double,double)'])
 def kernel_func(d, h) : 
@@ -62,7 +106,7 @@ def physical_to_pixel(xpos,xmin,dx) :
 def pixel_to_physical(xpix,x_start,dx) : 
     return dx*xpix+x_start
 
-#@jit(double[:,:](double[:],double[:],double[:],double[:],double[:],double[:],double[:],int32,int32,double,double,double,double))
+
 @autojit
 def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) : 
     MAX_D_OVER_H = 2.0
@@ -88,8 +132,8 @@ def render_image(xs,ys,zs,hs,qts,mass,rhos,nx,ny,xmin,xmax,ymin,ymax) :
 
         # is the particle in the frame?
         if ((x > xmin-2*h) and (x < xmax+2*h) and 
-            (y > ymin-2*h) and (y < ymax+2*h) and 
-            (np.abs(z-zplane) < 2*h)) : 
+            (y > ymin-2*h) and (y < ymax+2*h)):# and 
+            #(np.abs(z-zplane) < 2*h)) : 
 
             if h < dx*0.55 : h = dx*0.55        
             
@@ -361,7 +405,7 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
     # ------------------------------------
     start = time.clock()
     ind = np.where((xs + 2*hs > xmin) & (xs - 2*hs < xmax) & 
-                   (ys + 2*hs > ymin) & (ys - 2*hs < ymax)) 
+                   (ys + 2*hs > ymin) & (ys - 2*hs < ymax))
 #                   (np.abs(zs-zplane) < 2*hs))[0]
 
     xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
@@ -391,9 +435,9 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False):
     
     if timing: print '<<< Total time: %f s'%(time.clock()-time_init)
 
-    return image
+    return image, xs,ys,qts,hs
 
-@autojit
+@jit('double[:,:](double[:],double[:],double[:],double[:],int32,int32,double,double,double,double)')
 def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) : 
     # ------------------
     # create local image 
@@ -415,6 +459,7 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
     if not mod(kmin,2) : kmin += 1
     kmin = max(1,kmin)
     kernel_base = np.ones((kmax,kmax))
+    kernel = np.ones((kmax,kmax))
     calculate_distance(kernel_base,dx,dy)
     
     max_d_curr = 0.0
@@ -434,6 +479,7 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
         for end_ind in xrange(start_ind,Npart) : 
             if 2*hs[end_ind] < max_d_curr : pass
             else: break
+#        end_ind = bisect_right(2*hs,max_d_curr,start_ind,Npart)
         
         Nper_kernel = end_ind-start_ind
         
@@ -445,7 +491,6 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                                  kmax/2-k/2:kmax/2+k/2+1]
             kernel = kernel_func(kernel*i_max_d*2.0,1.0)
             kernel *= 8*i_max_d*i_max_d*i_max_d # kernel / h**3
-           # print 'Processing %d particles for k = %d'%(end_ind-start_ind, k)
         
             # --------------------------------
             # paint each particle on the image
@@ -471,8 +516,13 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax) :
                 ker_upper = abs(min(upper,0))
                 ker_lower = k + min(ny-lower,0)
                 
-                ker_val = (kernel[ker_left:ker_right,ker_upper:ker_lower])*qt
-                image[max(left,0):min(right,nx),max(upper,0):min(lower,nx)] += ker_val 
+          #      ker_val = (kernel[ker_left:ker_right,ker_upper:ker_lower])*qt
+                for i in xrange(0,k) : 
+                    for j in xrange(0,k): 
+                        if ((i+left>=0) and (i+left < nx) and (j+upper >=0) and (j+upper<ny)) : 
+                            image[(i+left),(j+upper)] += kernel[i,j]*qt
+
+                        #image[max(left,0):min(right,nx),max(upper,0):min(lower,nx)] += ker_val 
                 
 
             start_ind = end_ind
@@ -513,7 +563,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # trim particles based on image limits
     # ------------------------------------
     start = time.clock()
-    ind = np.where((np.abs(zs-zplane) < 2*hs) & 
+    ind = np.where(#(np.abs(zs-zplane) < 2*hs) & 
                    (xs > xmin-2*hs) & (xs < xmax+2*hs) & 
                    (ys > ymin-2*hs) & (ys < ymax+2*hs))[0]
     xs,ys,zs,hs,qts,mass,rhos = (xs[ind],ys[ind],zs[ind],hs[ind],qts[ind],mass[ind],rhos[ind])
@@ -588,6 +638,8 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     streams = [drv.Stream() for i in range(16)]    
     
     tile_start = time.clock()
+
+    drv.start_profiler()
     for i in xrange(Ntiles) :
         
         tile   = tiles_pix[i]
@@ -598,10 +650,10 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     
         nx_tile = xmax_t-xmin_t+1
         ny_tile = ymax_t-ymin_t+1
-         
+        where_start = time.clock()
         inds = np.where((xs_s + 2*hs_s >= xmin_p) & (xs_s - 2*hs_s <= xmax_p) & 
                         (ys_s + 2*hs_s >= ymin_p) & (ys_s - 2*hs_s <= ymax_p))[0]                     
-        
+        if timing: print '<<< Tile where took %f s'%(time.clock()-where_start)
         if inds.shape[0] > 0 : 
             start = time.clock()
 
@@ -621,7 +673,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
                    im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
                    block=(nthreads,1,1),stream=my_stream)
 
-          #  if timing: print '<<< Tile %d render took %f s'%(i,time.clock()-start)
+    if timing: print '<<< %d kernels launched in %f s'%(Ntiles,time.clock()-tile_start)
         # close if inds.shape[0]>0
     # close tile for loop
     
@@ -631,16 +683,16 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # ----------------------------------------------------------------------------------
     if ind[1] != len(xs) : 
         start = time.clock()
-        image = (template_kernel_cpu(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:],nx,ny,xmin,xmax,ymin,ymax)).T
+        image2 = (template_kernel_cpu(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:],nx,ny,xmin,xmax,ymin,ymax)).T
         if timing: print '<<< Processing %d particles with large smoothing lengths took %e s'%(len(xs)-ind[1],
                                                                                                time.clock()-start)
     drv.Context.synchronize()
     drv.memcpy_dtoh(image,im_gpu)
-    
+    drv.stop_profiler()
     if timing: print '<<< %d tiles rendered in %f s'%(Ntiles,time.clock()-tile_start)
 
     if timing: print '<<< Total render done in %f s\n'%(time.clock()-global_start)
-        
+    
     return image
 
 

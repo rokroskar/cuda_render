@@ -158,7 +158,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   for(i=0;i<IMAGE_SIZE;i++) local_image[i]=0.0;
   
   //  if (idx==0) printf("max/min = %d %d\n", xmax, xmin);
-
+  //for(int m=0;m<5000;m++){
   for(int k=kmin; k < kmax+2; k+=2) 
     {
       __syncthreads();
@@ -246,6 +246,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
+  //  }
 }
 
 
