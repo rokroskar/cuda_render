@@ -157,10 +157,11 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
 
   for(i=0;i<IMAGE_SIZE;i++) local_image[i]=0.0;
   
-  if (idx==0) printf("max/min = %d %d\n", xmax, xmin);
+  //  if (idx==0) printf("max/min = %d %d\n", xmax, xmin);
 
   for(int k=kmin; k < kmax+2; k+=2) 
     {
+      __syncthreads();
       // set up the base kernel
       kernel_distance(kernel,dx,dy);
  
@@ -206,13 +207,13 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
             my_end = Nper_thread+my_start;
           
           //all threads have their particle indices figured out, increment for next iteration
+         
           start_ind = end_ind;
           
           /*
             paint each particle on the local image
           */
-          __syncthreads();
-          
+
           for (pind=my_start;pind<my_end;pind++)
             {
               x = xs[inds[pind]];
@@ -245,7 +246,6 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
-  //if (idx==0) for(i=0;i<IMAGE_SIZE;i++) global_image[i] += local_image[i];
 }
 
 
