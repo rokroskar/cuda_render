@@ -56,7 +56,19 @@ So both the numbified version of the normal pynbody sph renderer is quite a bit 
 but the template renderer seems to be more efficient still. On the 40M dark matter particles
 of the Eris simulation this is pretty clear: 
 
+In [105]: numba_template_render.template_render_image(s.d,1600,1600,-.5,.5,-.5,.5,timing=True,two_d=1)
+<<< Initial particle selection took 4.380000 s
+<<< Bin sort done in 6.870000
+<<< Rendering 40134395 particles took 17.710000 s
+<<< Total time: 29.380000 s
 
+In [106]: numba_sph_render.start_image_render(s.d,1600,1600,-.5,.5,two_d=1)
+Rendering 40134395 particles took 56.890000 s
+
+In [107]: im=pynbody.sph.render_image(s.d,x1=-0.5,x2=.5,nx=1600,ny=1600,threaded=False,approximate_fast=False,kernel=pynbody.sph.Kernel2D())
+Rendering SPH image
+Beginning SPH render at 0.56 s
+Render done at 129.26 s
 
 
 """
