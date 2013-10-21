@@ -122,7 +122,7 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False,t
     # ----------------------
     # setup the global image
     # ----------------------
-    image = np.zeros((nx,ny))
+    image = np.zeros((nx,ny),dtype=np.float32)
     
     dx = (xmax-xmin)/nx
     dy = (ymax-ymin)/ny
@@ -161,7 +161,10 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False,t
     # process the particles 
     # ---------------------
     start = time.clock()
-    image = template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax,two_d)
+
+    import template_wrapper
+
+    image = template_wrapper.tile_render_kernel(xs,ys,qts,hs,np.float32(len(xs)),1,50,xmin,xmax,ymin,ymax,image.flatten(),nx,ny)
     if timing: print '<<< Rendering %d particles took %f s'%(len(xs),
                                                              time.clock()-start)
     

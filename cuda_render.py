@@ -13,6 +13,14 @@ import math
 import time
 import bisect
 
+@autojit
+def get_tile_ids(tiles_physical,xmin,ymin,xs,ys,tileids) :
+    t_dx = tiles_physical[0,1]-tiles_physical[0,0]
+    t_dy = tiles_physical[0,3]-tiles_physical[0,2]
+
+    x_ind = np.floor((xs-xmin)/t_dx)
+    y_ind = np.floor((ys-ymin)/t_dy)
+    tileids[:] = x_ind*(np.sqrt(tiles_physical.shape[0]))+y_ind
 
 
 def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthreads=128):
