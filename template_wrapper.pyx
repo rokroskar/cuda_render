@@ -14,9 +14,9 @@ cdef extern from "template_kernel.c":
      
      void _tile_render_kernel "tile_render_kernel"(double_t *xs, double_t *ys, 
                                                    double_t *qts, double_t *hs, 
-                                                   int Npart, int kmin, int kmax, 
-                                                   int xmin, int xmax, 
-                                                   int ymin, int ymax, 
+                                                   int Npart,  
+                                                   double xmin, double xmax, 
+                                                   double ymin, double ymax, 
                                                    double_t *image, int nx, int ny)
 
 
@@ -28,7 +28,8 @@ def kernel_distance(np.ndarray[double_t,ndim=1] kernel, double dx, double dy, in
      
 def tile_render_kernel(xs, ys, 
                        qts, hs, 
-                       int Npart, int kmin, int kmax, int xmin, int xmax, int ymin, int ymax, 
+                       int Npart, 
+                       double xmin, double xmax, double ymin, double ymax, 
                        image, int nx, int ny) :
 
     cdef np.ndarray[np.double_t,ndim=1,mode="c"] xs_c
@@ -46,4 +47,4 @@ def tile_render_kernel(xs, ys,
     cdef np.ndarray[np.double_t,ndim=1,mode="c"] image_c
     image_c = np.ascontiguousarray(image,dtype=np.double)
 
-    _tile_render_kernel(&xs_c[0], &ys_c[0], &qts_c[0], &hs_c[0], Npart, kmin, kmax, xmin, xmax, ymin, ymax, &image_c[0], nx, ny)
+    _tile_render_kernel(&xs_c[0], &ys_c[0], &qts_c[0], &hs_c[0], Npart, xmin, xmax, ymin, ymax, &image_c[0], nx, ny)

@@ -7,7 +7,7 @@
 void kernel_func(double *, double, double, int);
 void kernel_distance(double *, double, double, int);
 void tile_render_kernel(double *, double *, double *, double *, int,
-			int, int, int, int, int, int, double *, int, int);
+			double, double, double, double, double *, int, int);
 
 void kernel_func(double *kernel, double h, double max_d, int ksize)
 {
@@ -71,14 +71,14 @@ void update_image(double *global, double *local, int x_offset, int y_offset, int
 }
 */
 void tile_render_kernel(double *xs, double *ys, double *qts, double *hs, int Npart,
-			int kmin, int kmax, int xmin, int xmax, int ymin, int ymax, 
+			double xmin, double xmax, double ymin, double ymax, 
 			double *image, int nx, int ny)
 {    
   
-  double kernel[kmax*kmax];
+  double *kernel;
 
-  double dx = (xmax-xmin)/(double)nx;
-  double dy = (ymax-ymin)/(double)ny;
+  double dx = (double)(xmax-xmin)/(double)nx;
+  double dy = (double)(ymax-ymin)/(double)ny;
 
   double i_max_d;
   
@@ -86,7 +86,7 @@ void tile_render_kernel(double *xs, double *ys, double *qts, double *hs, int Npa
   int start_ind = 0, end_ind = 0;
   
   int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
-  int left,upper,xpos,ypos;
+  int left,upper,xpos,ypos,kmin,kmax;
   double x,y,qt,loc_val,ker_val;
 
 
@@ -96,16 +96,22 @@ void tile_render_kernel(double *xs, double *ys, double *qts, double *hs, int Npa
     ------------------------------
   */
   
+  kmax = (int)floor(hs[Npart-1]*4.0/dx);
+  kmin = (int)floor(hs[0]*4.0/dx);
+
   // make sure kmin and kmax are odd
   if (!(kmax % 2)) kmax += 1;
   if (!(kmin % 2)) kmin += 1;
   kmin = (kmin>1) ? kmin : 1;
 
+  kernel = malloc(sizeof(double)*kmax*kmax);
+
   for(int k=kmin; k < kmax+2; k+=2) 
     {
       // set up the base kernel
       kernel_distance(kernel,dx,dy,kmax);
- 
+
+      //      fprintf(stderr,"made kernel distance");
       /*
       max distance for this kernel
       */
@@ -117,13 +123,12 @@ void tile_render_kernel(double *xs, double *ys, double *qts, double *hs, int Npa
       /* -------------------------------------------------
          find the chunk of particles that need this kernel
          ------------------------------------------------- */
-      
+
       for(end_ind=start_ind;end_ind<Npart;) { 
         if (2*hs[end_ind] < max_d_curr) end_ind++;
         else break;
       }
       Nper_kernel = end_ind-start_ind;
-
 
       /*-------------------------------------------------------------------------
         only continue with kernel generation if there are particles that need it!
