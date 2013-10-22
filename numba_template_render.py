@@ -122,7 +122,7 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False,t
     # ----------------------
     # setup the global image
     # ----------------------
-    image = np.zeros((nx,ny),dtype=np.float32)
+    image = np.zeros((nx,ny))
     
     dx = (xmax-xmin)/nx
     dy = (ymax-ymin)/ny

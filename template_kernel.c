@@ -4,18 +4,18 @@
 #define PI 3.141592654f
 #define PI_I 1.0/PI
 
-void kernel_func(float *, float, float, int);
-void kernel_distance(float *, float, float, int);
-void tile_render_kernel(float *, float *, float *, float *, int,
-			int, int, int, int, int, int, float *, int, int);
+void kernel_func(double *, double, double, int);
+void kernel_distance(double *, double, double, int);
+void tile_render_kernel(double *, double *, double *, double *, int,
+			int, int, int, int, int, int, double *, int, int);
 
-void kernel_func(float *kernel, float h, float max_d, int ksize)
+void kernel_func(double *kernel, double h, double max_d, int ksize)
 {
   /* 
      calculate the kernel value given the distance from center 
      normalized to 2*smoothing_length
   */
-  float d;  
+  double d;  
 
   for(int i=0;i<ksize*ksize;i++) 
     {
@@ -26,7 +26,7 @@ void kernel_func(float *kernel, float h, float max_d, int ksize)
     }
 }
 
-void kernel_distance(float *kernel,float dx,float dy,int ksize) 
+void kernel_distance(double *kernel,double dx,double dy,int ksize) 
 {
   /*
     calculate distance of pixel from center in physical units
@@ -34,7 +34,7 @@ void kernel_distance(float *kernel,float dx,float dy,int ksize)
 
   int cen;
   int x,y;
-  float dxpix,dypix;
+  double dxpix,dypix;
   cen = ksize/2;
   
   for(int i=0;i<ksize*ksize;i++) 
@@ -42,15 +42,15 @@ void kernel_distance(float *kernel,float dx,float dy,int ksize)
       x = i/ksize;
       y = i - x*ksize;
       
-      dxpix = (float)(x-cen)*dx;
-      dypix = (float)(y-cen)*dy;
+      dxpix = (double)(x-cen)*dx;
+      dypix = (double)(y-cen)*dy;
       kernel[y*ksize+x] = sqrtf(dxpix*dxpix + dypix*dypix);
     }
 }
 
 /*    not needed in single cpu code, but might be useful when parallelized? 
 
-void update_image(float *global, float *local, int x_offset, int y_offset, int nx_glob, int nx_loc, int ny_loc)
+void update_image(double *global, double *local, int x_offset, int y_offset, int nx_glob, int nx_loc, int ny_loc)
 {
   int idx = threadIdx.x;
   int pix_per_thread = nx_loc*ny_loc/(blockDim.x);
@@ -70,24 +70,24 @@ void update_image(float *global, float *local, int x_offset, int y_offset, int n
     }
 }
 */
-void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, int Npart,
+void tile_render_kernel(double *xs, double *ys, double *qts, double *hs, int Npart,
 			int kmin, int kmax, int xmin, int xmax, int ymin, int ymax, 
-			float *image, int nx, int ny)
+			double *image, int nx, int ny)
 {    
   
-  float kernel[kmax*kmax];
+  double kernel[kmax*kmax];
 
-  float dx = (xmax-xmin)/(float)nx;
-  float dy = (ymax-ymin)/(float)ny;
+  double dx = (xmax-xmin)/(double)nx;
+  double dy = (ymax-ymin)/(double)ny;
 
-  float i_max_d;
+  double i_max_d;
   
-  float max_d_curr = 0.0, i_h_cb;
+  double max_d_curr = 0.0, i_h_cb;
   int start_ind = 0, end_ind = 0;
   
   int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
   int left,upper,xpos,ypos;
-  float x,y,qt,loc_val,ker_val;
+  double x,y,qt,loc_val,ker_val;
 
 
   /*
