@@ -8,11 +8,15 @@
 #define PI 3.141592654f
 #define PI_I 1.0/PI
 
-struct Coords {
+struct Coords_f {
   float xmin;
   float xmax;
   float ymin;
   float ymax;
+};
+
+struct Coords_i {
+  int xmin,xmax,ymin,ymax;
 };
 
 __device__ void kernel_func(float *kernel, float h, float max_d)
@@ -139,8 +143,9 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   
   float dx,dy; 
 
-  Coords tile_pix, tile_phy; // pixel and physical limits of the tile processed by the block
-  Coords global_coords;
+  Coords_i tile_pix; 
+  Coords_f tile_phy; // pixel and physical limits of the tile processed by the block
+  Coords_f global_coords;
 
   float i_max_d;
   
@@ -164,9 +169,9 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   */
 
   tile_pix.xmin = blockIdx.x*IMAGE_XDIM;
-  tile_pix.ymin = blockIdx.x*IMAGE_YDIM;
-  tile_pix.xmax = (blockIdx.x+1)*IMAGE_XDIM - 1 ? blockIdx.x < gridDim.x -1 : nx_glob-1;
-  tile_pix.ymax = (blockIdx.x+1)*IMAGE_YDIM - 1 ? blockIdx.x < gridDim.x -1 : ny_glob-1;
+  tile_pix.ymin = blockIdx.y*IMAGE_YDIM;
+  tile_pix.xmax = (blockIdx.x < gridDim.x -1) ? (blockIdx.x+1)*IMAGE_XDIM - 1 : nx_glob-1;
+  tile_pix.ymax = (blockIdx.y < gridDim.y -1) ? (blockIdx.y+1)*IMAGE_YDIM - 1 : ny_glob-1;
   
   nx = tile_pix.xmax-tile_pix.xmin;
   ny = tile_pix.ymax-tile_pix.ymin;
@@ -177,7 +182,6 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   tile_phy.ymin = global_coords.ymin + dy*(tile_pix.ymax+1);
   
   
-
   // set up the index array offset
   for(i=0;i<blockIdx.x;i++) ind_offset += p_per_tile[i];
   start_ind = ind_offset;
@@ -196,8 +200,9 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   if(idx < IMAGE_SIZE) for(i=idx;i<IMAGE_SIZE;i+=Nthreads) local_image[i]=0.0;
       
   if (idx==0) {
-    printf("block = %d min/max = %d %d\n", blockIdx.x, tile_phy.xmin, tile_phy.xmax);
-    printf("global min/max = %d %d\n", xmin,xmax);
+    printf("block = %d min/max = %f %f\n", blockIdx.x+blockIdx.y*gridDim.y, tile_phy.xmin, tile_phy.xmax);
+    printf("pixels xmin/xmax = %d %d\n", tile_pix.xmin, tile_pix.xmax);
+    
   }
   //for(int m=0;m<5000;m++){
   for(int k=1; k <= 31; k+=2) 
@@ -219,7 +224,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
          ------------------------------------------------- */
       
       /* DO THIS SEARCH IN PARALLEL */
-      for(end_ind = start_ind; end_ind < p_per_tile[blockIdx.x]+ind_offset; ) { 
+      for(end_ind = start_ind; end_ind < p_per_tile[blockIdx.x+blockIdx.y*gridDim.y]+ind_offset; ) { 
         if (2*hs[inds[end_ind]] < max_d_curr) end_ind++;
         else break;
       }
