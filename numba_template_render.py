@@ -163,8 +163,9 @@ def template_render_image(s,nx,ny,xmin,xmax,ymin,ymax,qty='rho',timing = False,t
     start = time.clock()
 
     import template_wrapper
-
     template_wrapper.tile_render_kernel(xs,ys,qts,hs,len(xs),xmin,xmax,ymin,ymax,image,nx,ny)
+#    image = template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax,two_d)
+    
     if timing: print '<<< Rendering %d particles took %f s'%(len(xs),
                                                              time.clock()-start)
     
