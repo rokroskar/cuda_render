@@ -156,7 +156,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     
     #tile_start = time.clock()
 
-    drv.start_profiler()
+   # drv.start_profiler()
     #for i in xrange(Ntiles) :
         
     #    tile   = tiles_pix[i]
@@ -193,11 +193,16 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     xmin,xmax,ymin,ymax = map(np.float32, [xmin,xmax,ymin,ymax])
     print xmin,xmax,ymin,ymax
     tile_start = time.clock()
+    
+    nx_tiles = (nx+100-1)/100
+    ny_tiles = (ny+100-1)/100
+    print nx_tiles, ny_tiles
+
     kernel(xs_gpu, ys_gpu, qts_gpu, hs_gpu,
            inds_gpu, parts_per_tile_gpu,
            xmin, xmax, ymin, ymax,
            im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
-           block=(nthreads,1,1), grid = (Ntiles,1,1))
+           block=(nthreads,1,1), grid = (nx_tiles,ny_tiles,1))
 
     if timing: print '<<< %d kernels launched in %f s'%(Ntiles,time.clock()-tile_start)
         # close if inds.shape[0]>0
@@ -207,12 +212,12 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # ----------------------------------------------------------------------------------
     # process the particles with large smoothing lengths concurrently with GPU execution
     # ----------------------------------------------------------------------------------
-    if ind[1] != len(xs) : 
-        start = time.clock()
-        image2 = (tile_render_kernel(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:], np.int32(len(xs)-ind[1]),
-                                      xmin,xmax,ymin,ymax,image,nx,ny)).T
-        if timing: print '<<< Processing %d particles with large smoothing lengths took %e s'%(len(xs)-ind[1],
-                                                                                               time.clock()-start)
+    #if ind[1] != len(xs) : 
+    #    start = time.clock()
+    #    image2 = (tile_render_kernel(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:], np.int32(len(xs)-ind[1]),
+    #                                  xmin,xmax,ymin,ymax,image,nx,ny)).T
+    #    if timing: print '<<< Processing %d particles with large smoothing lengths took %e s'%(len(xs)-ind[1],
+    #                                                                                           time.clock()-start)
     drv.Context.synchronize()
     drv.memcpy_dtoh(image,im_gpu)
     drv.stop_profiler()
