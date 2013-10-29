@@ -155,8 +155,8 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
   int left,upper,xpos,ypos;
   float x,y,qt,loc_val,ker_val;
-  int ind_offset = 0;
-
+  int ind_offset = 0, Nparts = p_per_tile[blockIdx.x+blockIdx.y*gridDim.y];
+  int blockId = blockIdx.x+blockIdx.y*gridDim.y;
   global_coords.xmin = xmin;
   global_coords.xmax = xmax;
   global_coords.ymin = ymin;
@@ -173,17 +173,17 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   tile_pix.xmax = (blockIdx.x < gridDim.x -1) ? (blockIdx.x+1)*IMAGE_XDIM - 1 : nx_glob-1;
   tile_pix.ymax = (blockIdx.y < gridDim.y -1) ? (blockIdx.y+1)*IMAGE_YDIM - 1 : ny_glob-1;
   
-  nx = tile_pix.xmax-tile_pix.xmin;
-  ny = tile_pix.ymax-tile_pix.ymin;
+  nx = tile_pix.xmax-tile_pix.xmin+1;
+  ny = tile_pix.ymax-tile_pix.ymin+1;
 
   tile_phy.xmin = global_coords.xmin + dx*tile_pix.xmin;
   tile_phy.ymin = global_coords.ymin + dy*tile_pix.ymin;
   tile_phy.xmax = global_coords.xmin + dx*(tile_pix.xmax+1);
-  tile_phy.ymin = global_coords.ymin + dy*(tile_pix.ymax+1);
+  tile_phy.ymax = global_coords.ymin + dy*(tile_pix.ymax+1);
   
   
   // set up the index array offset
-  for(i=0;i<blockIdx.x;i++) ind_offset += p_per_tile[i];
+  for(i=0;i<blockId;i++) ind_offset += p_per_tile[i];
   start_ind = ind_offset;
 
   /*
@@ -200,8 +200,12 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   if(idx < IMAGE_SIZE) for(i=idx;i<IMAGE_SIZE;i+=Nthreads) local_image[i]=0.0;
       
   if (idx==0) {
-    printf("block = %d min/max = %f %f\n", blockIdx.x+blockIdx.y*gridDim.y, tile_phy.xmin, tile_phy.xmax);
-    printf("pixels xmin/xmax = %d %d\n", tile_pix.xmin, tile_pix.xmax);
+    printf("block = %d min/max, ymin/ymax = %f %f, %f %f\n", blockId, 
+           tile_phy.xmin, tile_phy.xmax,
+           tile_phy.ymin, tile_phy.ymax);
+    printf("block = %d pixels xmin/xmax, ymin/ymax = %d %d, %d %d\n", blockId, tile_pix.xmin, tile_pix.xmax, 
+           tile_pix.ymin, tile_pix.ymax);
+    printf("block = %d index offset = %d\n", blockId, ind_offset);
     
   }
   //for(int m=0;m<5000;m++){
@@ -224,7 +228,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
          ------------------------------------------------- */
       
       /* DO THIS SEARCH IN PARALLEL */
-      for(end_ind = start_ind; end_ind < p_per_tile[blockIdx.x+blockIdx.y*gridDim.y]+ind_offset; ) { 
+      for(end_ind = start_ind; end_ind < Nparts+ind_offset; ) { 
         if (2*hs[inds[end_ind]] < max_d_curr) end_ind++;
         else break;
       }
@@ -251,9 +255,6 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
           else 
             my_end = Nper_thread+my_start;
           
-          if (idx == 0) printf("k = %d Nperkernel = %d Nper_thread = %d\n", k, Nper_kernel, Nper_thread);
-          printf("idx = %d my start = %d my end = %d\n",idx, my_start,my_end);
-
           //all threads have their particle indices figured out, increment for next iteration
          
           start_ind = end_ind;
@@ -294,6 +295,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,tile_pix.xmin,tile_pix.ymin,nx_glob,nx,ny);
+  //for(i=0;i<IMAGE_SIZE;i++) global_image[i] = local_image[i];
   //  }
 }
 

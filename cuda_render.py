@@ -137,17 +137,19 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     start = time.clock()
     for i in xrange(Ntiles) : 
         xmin_p, xmax_p, ymin_p, ymax_p  = tiles_physical[i]
+        print 'tile %d xmin/xmax = %f/%f, ymin/ymax = %f/%f'%(i,xmin_p,xmax_p,ymin_p,ymax_p)
         inds = np.where((xs_s + 2*hs_s >= xmin_p) & (xs_s - 2*hs_s <= xmax_p) & 
                         (ys_s + 2*hs_s >= ymin_p) & (ys_s - 2*hs_s <= ymax_p))[0]      
         indlist = np.append(indlist,inds)
         parts_per_tile.append(len(inds))
+#        import pdb; pdb.set_trace()
     parts_per_tile = np.array(parts_per_tile,dtype=np.int32)
 
     if timing: print '<<< Figuring out tile indices took %f s'%(time.clock()-start)
 
     # copy indices to the gpu
     inds_gpu = drv.mem_alloc(indlist.astype(np.int32).nbytes)
-    drv.memcpy_htod_async(inds_gpu,inds.astype(np.int32))
+    drv.memcpy_htod_async(inds_gpu,indlist.astype(np.int32))
 
     parts_per_tile_gpu = drv.mem_alloc(parts_per_tile.astype(np.int32).nbytes)
     drv.memcpy_htod_async(parts_per_tile_gpu,parts_per_tile.astype(np.int32))
@@ -249,10 +251,10 @@ def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim) 
             ymin = j*max_dim
             ymax = (j+1)*max_dim -1 if j < ny_tiles-1 else ny-1
             
-            limits[i*nx_tiles + j] = [xmin,xmax,ymin,ymax]
+            limits[i + j*ny_tiles] = [xmin,xmax,ymin,ymax]
 
-            limits_physical[i*nx_tiles+j] = [x_phys_min+dx*xmin,x_phys_min+(xmax+1)*dx,
-                                             y_phys_min+dy*ymin,y_phys_min+(ymax+1)*dy]
+            limits_physical[i + j*ny_tiles] = [x_phys_min+dx*xmin,x_phys_min+(xmax+1)*dx,
+                                               y_phys_min+dy*ymin,y_phys_min+(ymax+1)*dy]
                                              
                                              
     
