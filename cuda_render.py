@@ -100,23 +100,23 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # ----------------------
     
     start = time.clock()
-
+    drv.start_profiler()
     xs_s, ys_s, qts_s, hs_s = [xs[:ind[1]], ys[:ind[1]], qts[:ind[1]], hs[:ind[1]]]
 
     xs_gpu = drv.mem_alloc(xs_s.astype(np.float32).nbytes)
-    drv.memcpy_htod(xs_gpu,xs_s.astype(np.float32))
+    drv.memcpy_htod_async(xs_gpu,xs_s.astype(np.float32))
     
     ys_gpu = drv.mem_alloc(ys_s.astype(np.float32).nbytes)
-    drv.memcpy_htod(ys_gpu,ys_s.astype(np.float32))
+    drv.memcpy_htod_async(ys_gpu,ys_s.astype(np.float32))
     
     qts_gpu = drv.mem_alloc(qts_s.astype(np.float32).nbytes)
-    drv.memcpy_htod(qts_gpu,qts_s.astype(np.float32))
+    drv.memcpy_htod_async(qts_gpu,qts_s.astype(np.float32))
     
     hs_gpu = drv.mem_alloc(hs_s.astype(np.float32).nbytes)
-    drv.memcpy_htod(hs_gpu,hs_s.astype(np.float32))
+    drv.memcpy_htod_async(hs_gpu,hs_s.astype(np.float32))
     
     im_gpu = drv.mem_alloc(image.astype(np.float32).nbytes)
-    drv.memcpy_htod(im_gpu,image.astype(np.float32))
+    drv.memcpy_htod_async(im_gpu,image.astype(np.float32))
 
     if timing: print "<<< Data transfer to device took %f s"%(time.clock()-start)
 
@@ -135,6 +135,11 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     indlist = np.array([],np.int32)
     parts_per_tile = []
     start = time.clock()
+
+    # make gpu timers
+    start_g = drv.Event()
+    end_g = drv.Event()
+    
     for i in xrange(Ntiles) : 
         xmin_p, xmax_p, ymin_p, ymax_p  = tiles_physical[i]
         print 'tile %d xmin/xmax = %f/%f, ymin/ymax = %f/%f'%(i,xmin_p,xmax_p,ymin_p,ymax_p)
@@ -158,7 +163,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     
     #tile_start = time.clock()
 
-   # drv.start_profiler()
+   
     #for i in xrange(Ntiles) :
         
     #    tile   = tiles_pix[i]
@@ -199,13 +204,15 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     nx_tiles = (nx+100-1)/100
     ny_tiles = (ny+100-1)/100
     print nx_tiles, ny_tiles
-
+    start_g.record()
     kernel(xs_gpu, ys_gpu, qts_gpu, hs_gpu,
            inds_gpu, parts_per_tile_gpu,
            xmin, xmax, ymin, ymax,
            im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
            block=(nthreads,1,1), grid = (nx_tiles,ny_tiles,1))
-
+    end_g.record()
+    
+  
     if timing: print '<<< %d kernels launched in %f s'%(Ntiles,time.clock()-tile_start)
         # close if inds.shape[0]>0
     # close tile for loop
@@ -214,20 +221,25 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # ----------------------------------------------------------------------------------
     # process the particles with large smoothing lengths concurrently with GPU execution
     # ----------------------------------------------------------------------------------
-    #if ind[1] != len(xs) : 
-    #    start = time.clock()
-    #    image2 = (tile_render_kernel(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:], np.int32(len(xs)-ind[1]),
-    #                                  xmin,xmax,ymin,ymax,image,nx,ny)).T
-    #    if timing: print '<<< Processing %d particles with large smoothing lengths took %e s'%(len(xs)-ind[1],
-    #                                                                                           time.clock()-start)
+    if ind[1] != len(xs) : 
+        start = time.clock()
+        image2 = np.zeros(nx*ny)
+        tile_render_kernel(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:], np.int32(len(xs)-ind[1]),
+                                      xmin,xmax,ymin,ymax,image2,nx,ny)
+        if timing: print '<<< Processing %d particles with large smoothing lengths took %e s'%(len(xs)-ind[1],
+                                                                                               time.clock()-start)
+    
+    end_g.synchronize()
+    gpu_time = start_g.time_till(end_g)
     drv.Context.synchronize()
     drv.memcpy_dtoh(image,im_gpu)
     drv.stop_profiler()
+    if timing: print '<<< GPU kernel timing = %f ms'%(gpu_time)
     if timing: print '<<< %d tiles rendered in %f s'%(Ntiles,time.clock()-tile_start)
 
     if timing: print '<<< Total render done in %f s\n'%(time.clock()-global_start)
     
-    return image
+    return image,image2.reshape((nx,ny))
 
 
 @autojit
@@ -270,3 +282,7 @@ def test_template_render(s,nx,ny,xmin,xmax,qty='rho',sort_arr = None, timing = F
     return res 
 
 
+
+
+#def get_tile_indices(xs,ys,tiles_pix,tile_physical) : 
+    
