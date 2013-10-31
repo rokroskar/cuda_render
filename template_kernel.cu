@@ -1,12 +1,20 @@
 #include <stdio.h>
 
 #define KSIZE 31
-#define IMAGE_XDIM 100
-#define IMAGE_YDIM 100
-#define IMAGE_SIZE IMAGE_XDIM*IMAGE_YDIM
+#define TILE_XDIM 100
+#define TILE_YDIM 100
+#define TILE_SIZE TILE_XDIM*TILE_YDIM
 
 #define PI 3.141592654f
 #define PI_I 1.0/PI
+
+struct Particle {
+  float x;
+  float y; 
+  float z;
+  float qt; 
+  float h;
+} ;
 
 __device__ void kernel_func(float *kernel, float h, float max_d)
 {
@@ -113,8 +121,7 @@ __device__ void update_image(float *global, float *local, int x_offset, int y_of
     }
 }
 
-__global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, int *inds, int Npart,
-                                   int kmin, int kmax, 
+__global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, int Npart,
                                    float xmin_p, float xmax_p, float ymin_p, float ymax_p,
                                    int xmin, int xmax, int ymin, int ymax, 
                                    float *global_image, int nx_glob, int ny_glob)
@@ -125,7 +132,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
 
   
   // declare shared arrays -- image and base kernel
-  __shared__ float local_image[IMAGE_XDIM*IMAGE_YDIM];
+  __shared__ float local_image[TILE_XDIM*TILE_YDIM];
   __shared__ float kernel[KSIZE*KSIZE];
 
   int nx = xmax-xmin+1;
@@ -140,7 +147,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
   int start_ind = 0, end_ind = 0;
   
   int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
-  int left,upper,xpos,ypos;
+  int left,upper,xpos,ypos,kmax=31,kmin=1;
   float x,y,qt,loc_val,ker_val;
 
 
@@ -150,12 +157,12 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
     ------------------------------
   */
   
-  // make sure kmin and kmax are odd
-  if (!(kmax % 2)) kmax += 1;
-  if (!(kmin % 2)) kmin += 1;
-  kmin = (kmin>1) ? kmin : 1;
+  // // make sure kmin and kmax are odd
+  // if (!(kmax % 2)) kmax += 1;
+  // if (!(kmin % 2)) kmin += 1;
+  // kmin = (kmin>1) ? kmin : 1;
 
-  for(i=0;i<IMAGE_SIZE;i++) local_image[i]=0.0;
+  for(i=0;i<TILE_SIZE;i++) local_image[i]=0.0;
   
   //  if (idx==0) printf("max/min = %d %d\n", xmax, xmin);
   //for(int m=0;m<5000;m++){
@@ -179,7 +186,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
       
       /* DO THIS SEARCH IN PARALLEL */
       for(end_ind=start_ind;end_ind<Npart;) { 
-        if (2*hs[inds[end_ind]] < max_d_curr) end_ind++;
+        if (2*hs[end_ind] < max_d_curr) end_ind++;
         else break;
       }
       Nper_kernel = end_ind-start_ind;
@@ -216,10 +223,10 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
 
           for (pind=my_start;pind<my_end;pind++)
             {
-              x = xs[inds[pind]];
-              y = ys[inds[pind]];
+              x = xs[pind];
+              y = ys[pind];
               //h = hs[inds[pind]];
-              qt = qts[inds[pind]];
+              qt = qts[pind];
               
               xpos = __float2int_rd((x-xmin_p)/dx);
               ypos = __float2int_rd((y-ymin_p)/dy);
@@ -250,4 +257,72 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
 }
 
 
+__device__ int get_tile_id(float x, float y, float xmin, float ymin, int ny, float dx, float dy)
+{
+  if ((x-xmin < 0) || (y-ymin < 0)) return -100; // if out of the image
+  else return floorf((x - xmin)/dx)*ny + floorf((y - ymin)/dy);
+}
 
+__device__ int already_marked(int tile_vals[9], int end)
+{
+  for(int i=0;i<end;i++) 
+    if(tile_vals[i] == tile_vals[end]) return 1;
+  return 0;
+}
+
+
+__global__ void tile_histogram(Particle *ps, int *hist, int Npart,
+                               float xmin, float xmax, float ymin, float ymax,
+                               int nx, int ny, int Ntiles)
+{
+
+  __shared__ int temp_hist[2500]; // this makes the max image size 5000x5000 pixels
+  int i = threadIdx.x + blockIdx.x*blockDim.x;
+  int Nper_thread = Npart/(blockDim.x*gridDim.x);
+  int stride = blockDim.x*gridDim.x;
+  int tile_vals[9];
+  float x,y,h,dx,dy;
+  int j;
+
+  dx = (xmax-xmin)/sqrtf(Ntiles);
+  dy = (ymax-ymin)/sqrtf(Ntiles);
+
+  if (i == 0) printf("N per thread = %d\n", Nper_thread);
+   
+  for(j = i; j < 2500 ; j += blockDim.x) temp_hist[j] = 0.0;
+
+  while(i < Npart) 
+    {
+      x = ps[i].x;
+      y = ps[i].y;
+      h = ps[i].h;
+
+      float x_offsets[] = {0.,-2*h,2*h,0.,0.,-2*h,2*h,-2*h,2*h};
+      float y_offsets[] = {0.,0.,0.,2*h,-2*h,2*h,2*h,-2*h,-2*h};
+      if (threadIdx.x == 0) { 
+        printf("x,y = %f, %f\n", x, y);
+      }
+
+      for(j=0;j<9;j++) tile_vals[j] = -1;
+      
+      for(j=0;j<9;j++) 
+        {
+          tile_vals[j] = get_tile_id(x+x_offsets[j],y+y_offsets[j],xmin,ymin,sqrtf(Ntiles),dx,dy);
+          if((tile_vals[j] >= 0) && !(already_marked(tile_vals,j)))
+            atomicAdd(&(temp_hist[tile_vals[j]]),1);
+        }
+      i+=blockDim.x*gridDim.x;
+
+    }
+
+  __syncthreads();
+  
+  // copy the local hist to the global hist
+  i = threadIdx.x;
+  while(i < Ntiles) {
+    atomicAdd(&(hist[i]),temp_hist[i]);
+    i+=blockDim.x;
+  }
+}
+  
+  
