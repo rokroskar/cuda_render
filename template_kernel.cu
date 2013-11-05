@@ -11,10 +11,35 @@
 struct Particle {
   float x;
   float y; 
-  float z;
   float qt; 
   float h;
 } ;
+
+
+
+
+inline __device__ uint scan1Inclusive(uint idata, volatile uint *s_Data, uint size)
+{
+    uint pos = 2 * threadIdx.x - (threadIdx.x & (size - 1));
+    s_Data[pos] = 0;
+    pos += size;
+    s_Data[pos] = idata;
+
+    for (uint offset = 1; offset < size; offset <<= 1)
+    {
+        __syncthreads();
+        uint t = s_Data[pos] + s_Data[pos - offset];
+        __syncthreads();
+        s_Data[pos] = t;
+    }
+
+    return s_Data[pos];
+}
+
+inline __device__ uint scan1Exclusive(uint idata, volatile uint *s_Data, uint size)
+{
+    return scan1Inclusive(idata, s_Data, size) - idata;
+}
 
 __device__ void kernel_func(float *kernel, float h, float max_d)
 {
@@ -121,7 +146,7 @@ __device__ void update_image(float *global, float *local, int x_offset, int y_of
     }
 }
 
-__global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, int Npart,
+__global__ void tile_render_kernel(Particle *ps, int *tile_offsets,
                                    float xmin_p, float xmax_p, float ymin_p, float ymax_p,
                                    int xmin, int xmax, int ymin, int ymax, 
                                    float *global_image, int nx_glob, int ny_glob)
@@ -129,7 +154,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
 
   int  Nthreads = blockDim.x;
   int idx = threadIdx.x;
-
+  unsigned int Npart = tile_offsets[blockIdx.x+1] - tile_offsets[blockIdx.x];
   
   // declare shared arrays -- image and base kernel
   __shared__ float local_image[TILE_XDIM*TILE_YDIM];
@@ -156,13 +181,8 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
     start the loop through kernels
     ------------------------------
   */
-  
-  // // make sure kmin and kmax are odd
-  // if (!(kmax % 2)) kmax += 1;
-  // if (!(kmin % 2)) kmin += 1;
-  // kmin = (kmin>1) ? kmin : 1;
 
-  for(i=0;i<TILE_SIZE;i++) local_image[i]=0.0;
+  for(i=idx;i<TILE_SIZE;i+=Nthreads) local_image[i]=0.0;
   
   //  if (idx==0) printf("max/min = %d %d\n", xmax, xmin);
   //for(int m=0;m<5000;m++){
@@ -186,7 +206,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
       
       /* DO THIS SEARCH IN PARALLEL */
       for(end_ind=start_ind;end_ind<Npart;) { 
-        if (2*hs[end_ind] < max_d_curr) end_ind++;
+        if (2*ps[end_ind].h < max_d_curr) end_ind++;
         else break;
       }
       Nper_kernel = end_ind-start_ind;
@@ -200,33 +220,16 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
           kernel_func(kernel,1.0,max_d_curr);
           i_h_cb = 8.*i_max_d*i_max_d*i_max_d;
           
-          /* --------------------------------------
-             determine thread particle distribution
-             --------------------------------------*/
-          Nper_thread = Nper_kernel/Nthreads;
-          my_start = Nper_thread*idx+start_ind;
-          
-          // if this is the last thread, make it pick up the slack
-          my_end = end_ind;
-          if (idx == Nthreads-1) 
-            my_end = end_ind;
-          else 
-            my_end = Nper_thread+my_start;
-          
-          //all threads have their particle indices figured out, increment for next iteration
-         
-          start_ind = end_ind;
-          
           /*
             paint each particle on the local image
           */
 
-          for (pind=my_start;pind<my_end;pind++)
+          for (pind=start_ind+idx;pind<end_ind;pind+=Nthreads)
             {
-              x = xs[pind];
-              y = ys[pind];
+              x = ps[pind].x;
+              y = ps[pind].y;
               //h = hs[inds[pind]];
-              qt = qts[pind];
+              qt = ps[pind].qt;
               
               xpos = __float2int_rd((x-xmin_p)/dx);
               ypos = __float2int_rd((y-ymin_p)/dy);
@@ -248,6 +251,7 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
                     }
                 }
             }
+          start_ind = end_ind;
         }
     }
   __syncthreads();
@@ -257,10 +261,11 @@ __global__ void tile_render_kernel(float *xs, float *ys, float *qts, float *hs, 
 }
 
 
-__device__ int get_tile_id(float x, float y, float xmin, float ymin, int ny, float dx, float dy)
+__device__ int get_tile_id(float x, float y, float xmin, float xmax, float ymin, float ymax, 
+                           int ny, float dx, float dy)
 {
-  if ((x-xmin < 0) || (y-ymin < 0)) return -100; // if out of the image
-  else return floorf((x - xmin)/dx)*ny + floorf((y - ymin)/dy);
+  if ((x < xmin) || (y < ymin) || (x > xmax) || (y > ymax)) return -100; // if out of the image
+  else return __float2int_rd((x - xmin)/dx)*ny + __float2int_rd((y - ymin)/dy);
 }
 
 __device__ int already_marked(int tile_vals[9], int end)
@@ -276,53 +281,120 @@ __global__ void tile_histogram(Particle *ps, int *hist, int Npart,
                                int nx, int ny, int Ntiles)
 {
 
-  __shared__ int temp_hist[2500]; // this makes the max image size 5000x5000 pixels
-  int i = threadIdx.x + blockIdx.x*blockDim.x;
+   __shared__ int temp_hist[2500]; 
+  int i,j;
   int Nper_thread = Npart/(blockDim.x*gridDim.x);
   int stride = blockDim.x*gridDim.x;
   int tile_vals[9];
   float x,y,h,dx,dy;
-  int j;
+  int val;
 
   dx = (xmax-xmin)/sqrtf(Ntiles);
   dy = (ymax-ymin)/sqrtf(Ntiles);
 
-  if (i == 0) printf("N per thread = %d\n", Nper_thread);
-   
-  for(j = i; j < 2500 ; j += blockDim.x) temp_hist[j] = 0.0;
-
-  while(i < Npart) 
+  for(j = threadIdx.x; j < 2500 ; j += blockDim.x) temp_hist[j] = 0.0;
+  
+  for(i=threadIdx.x + blockIdx.x*blockDim.x;i < Npart;i+=stride) 
     {
       x = ps[i].x;
       y = ps[i].y;
       h = ps[i].h;
 
-      float x_offsets[] = {0.,-2*h,2*h,0.,0.,-2*h,2*h,-2*h,2*h};
-      float y_offsets[] = {0.,0.,0.,2*h,-2*h,2*h,2*h,-2*h,-2*h};
-      if (threadIdx.x == 0) { 
-        printf("x,y = %f, %f\n", x, y);
-      }
-
-      for(j=0;j<9;j++) tile_vals[j] = -1;
+      // center, left, right, up, down, upper left, upper right, lower left, lower right
+      float x_offsets[] = {0.,-2*h,2*h,   0.,  0.,-2*h, 2*h, -2*h,  2*h};
+      float y_offsets[] = {0.,   0., 0.,2*h,-2*h,  2*h, 2*h, -2*h, -2*h};
+      
+      for(j=0;j<9;j++) tile_vals[j] = -100;
       
       for(j=0;j<9;j++) 
         {
-          tile_vals[j] = get_tile_id(x+x_offsets[j],y+y_offsets[j],xmin,ymin,sqrtf(Ntiles),dx,dy);
-          if((tile_vals[j] >= 0) && !(already_marked(tile_vals,j)))
-            atomicAdd(&(temp_hist[tile_vals[j]]),1);
-        }
-      i+=blockDim.x*gridDim.x;
+          tile_vals[j] = get_tile_id(x+x_offsets[j],y+y_offsets[j],xmin,xmax,ymin,ymax,
+                                     float2int(sqrtf(Ntiles)),dx,dy);
 
+          if((tile_vals[j] >= 0) && !(already_marked(tile_vals,j)))
+            {
+              val = tile_vals[j];
+              atomicAdd(&(temp_hist[tile_vals[j]]),1);
+            }
+        }
     }
 
   __syncthreads();
   
   // copy the local hist to the global hist
-  i = threadIdx.x;
-  while(i < Ntiles) {
-    atomicAdd(&(hist[i]),temp_hist[i]);
-    i+=blockDim.x;
-  }
+  for(i=threadIdx.x;i < Ntiles;i+=blockDim.x) atomicAdd(&(hist[i]),temp_hist[i]);
+ 
 }
   
   
+__global__ void distribute_particles(Particle *ps, Particle *ps_tiles, int *tile_offsets, int Npart,
+                               float xmin, float xmax, float ymin, float ymax,
+                               int nx, int ny, int Ntiles)
+{
+  extern __shared__ uint shared[];
+  uint *flag = &shared[0];
+  uint *counter = &shared[blockDim.x*2];
+
+  float x,y,h,qt,dx,dy;
+  
+  int idx = threadIdx.x;
+  int done = 0, i,j;
+  int ind, tile_val;
+  uint offset, my_flag;
+
+  dx = (xmax-xmin)/sqrtf(Ntiles);
+  dy = (ymax-ymin)/sqrtf(Ntiles);
+
+
+  for(uint i=idx;i<Npart;i+=blockDim.x) // each block processes all the particles
+    {
+      x = ps[i].x;
+      y = ps[i].y;
+      h = ps[i].h;
+      qt = ps[i].qt;
+
+      float x_offsets[] = {0.,-2*h,2*h,0.,0.,-2*h,2*h,-2*h,2*h};
+      float y_offsets[] = {0.,0.,0.,2*h,-2*h,2*h,2*h,-2*h,-2*h};
+      
+      my_flag = 0;
+
+      for(j=0;(j<9) && !my_flag;j++) 
+        {
+          tile_val = get_tile_id(x+x_offsets[j],y+y_offsets[j],xmin,xmax,ymin,ymax,
+                                 float2int(sqrtf(Ntiles)),dx,dy);
+          if((tile_val == blockIdx.x) && (my_flag == 0))  
+            {
+              my_flag = 1;
+            }
+        }
+      
+      __syncthreads();
+      
+      // determine offsets
+      offset = scan1Exclusive(my_flag,flag,blockDim.x);
+      
+      __syncthreads();
+
+      // if the particle the thread read fits into this block, copy it over
+      if (my_flag) 
+        {
+          ind = *counter + offset + tile_offsets[blockIdx.x];
+          ps_tiles[ind].x = x;
+          ps_tiles[ind].y = y;
+          ps_tiles[ind].h = h;
+          ps_tiles[ind].qt = qt;
+        }
+      __syncthreads();
+      if (my_flag) atomicAdd(counter,1);
+    }
+  __syncthreads();
+  if (idx==0) printf("Block %d had %d particles\n", blockIdx.x,*counter);
+}
+
+
+__global__ void calculate_keys(Particle *ps, int *keys, int Npart, float dx) 
+{
+  float idx2 = 1./(dx/2.0);
+  for(int i=threadIdx.x + blockDim.x*blockIdx.x; i < Npart; i += blockDim.x*gridDim.x)
+    keys[i] = 2.0*ps[i].h*idx2;
+}
