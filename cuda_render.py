@@ -12,6 +12,7 @@ import scipy.integrate as integrate
 import math
 import time
 from bisect import bisect_left, bisect_right
+from radix_sort import radix_sort
 
 @autojit(nopyton=True)
 def get_tile_ids(tiles_physical,xmin,ymin,ps,tileids) :
@@ -70,10 +71,11 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
 
     start = time.clock()
     # construct an array of particles
-    ps = np.empty(len(s),dtype=[('x','f4'),('y','f4'),('z','f4'),('qt','f4'),('h','f4')])
+    Partstruct = [('x','f4'),('y','f4'),('qt','f4'),('h','f4')]
+    ps = drv.pagelocked_empty(len(s),dtype=Partstruct)
     
     with s.immediate_mode : 
-        ps['x'],ps['y'],ps['z'],ps['qt'],ps['h'] = [s[arr] for arr in ['x','y','z','mass','smooth']]
+        ps['x'],ps['y'],ps['qt'],ps['h'] = [s[arr] for arr in ['x','y','mass','smooth']]
 
     if timing: print '<<< Forming particle struct took %f s'%(time.clock()-start)
 
@@ -118,19 +120,25 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
 
     Ntiles = tiles_pix.shape[0]
 
-    # -------------------------------------------------------------
-    # set up streams and figure out particle distributions per tile 
-    # -------------------------------------------------------------
-    
+     
     streams = [drv.Stream() for i in range(16)]    
     
-    # -------------------------------
-    # set up tile distribution kernel
-    # -------------------------------
+    # ------------------
+    # set up the kernels
+    # ------------------
     code = file('/home/itp/roskar/homegrown/template_kernel.cu').read()
     mod = SourceModule(code)
     tile_histogram = mod.get_function("tile_histogram")
+    distribute_particles = mod.get_function("distribute_particles")
+    tile_render_kernel = mod.get_function("tile_render_kernel")
+    calculate_keys = mod.get_function("calculate_keys")
+
+
+    # -------------------------------------------------------------
+    # set up streams and figure out particle distributions per tile 
+    # -------------------------------------------------------------
    
+
     # allocate histogram array
     hist = np.zeros(Ntiles,dtype=np.int32)
     
@@ -138,126 +146,93 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     hist_gpu = drv.mem_alloc(hist.nbytes)
     drv.memcpy_htod(hist_gpu,hist)
     
+    start_g = drv.Event()
+    end_g = drv.Event()
+
+    start_g.record()
     ps_on_gpu = drv.mem_alloc(ps_gpu.nbytes)
     drv.memcpy_htod(ps_on_gpu,ps_gpu)
+    end_g.record()
+    end_g.synchronize()
+
+    if timing: print '<<< Particle copy onto GPU took %f ms'%(start_g.time_till(end_g))
 
     # make everything the right size
     xmin,xmax,ymin,ymax = map(np.float32, [xmin,xmax,ymin,ymax])
     nx,ny,Ntiles = map(np.int32, [nx,ny,Ntiles])
-    
-    print ps_gpu['x'].min(), ps_gpu['y'].min()
 
-    tile_histogram(ps_on_gpu,hist_gpu,np.int32(len(ps_gpu)),xmin,xmax,ymin,ymax,nx,ny,Ntiles,block=(512,1,1))
-    
+    start_g.record()
+    tile_histogram(ps_on_gpu,hist_gpu,np.int32(len(ps_gpu)),xmin,xmax,ymin,ymax,nx,ny,Ntiles,
+                   block=(nthreads,1,1),grid=(32,1,1))
+
     drv.Context.synchronize()
     drv.memcpy_dtoh(hist,hist_gpu)
+    end_g.record()
+    end_g.synchronize()
+    if timing: print '<<< Tile histogram took %f ms'%(start_g.time_till(end_g))
+    print "<<< Total particle array = %d"%(hist.sum())
 
-    return hist
-    
-    start = time.clock()
-    tile_ids = np.empty(len(ps_gpu),dtype=np.int32) 
-    get_tile_ids(tiles_physical,xmin,ymin,ps_gpu,tile_ids)
-    if timing: print '<<< Generating tile IDs took %f s'%(time.clock()-start)
+    # ---------------------------------------------------------------------------------
+    # figured out the numbers of particles per tile -- set up the tile particle buffers
+    # ---------------------------------------------------------------------------------
+    ps_tiles = np.empty(hist.sum(),dtype=Partstruct)
+    ps_tiles_gpu = drv.mem_alloc(ps_tiles.nbytes)
+
+    tile_offsets = np.array([0],dtype=np.int32)
+    tile_offsets = np.append(tile_offsets, hist.cumsum().astype(np.int32))
+    tile_offsets_gpu = drv.mem_alloc(tile_offsets.nbytes)
+    drv.memcpy_htod(tile_offsets_gpu,tile_offsets)
+
+    start_g.record()
+    distribute_particles(ps_on_gpu, ps_tiles_gpu, tile_offsets_gpu, np.int32(len(ps_gpu)), 
+                         xmin, xmax, ymin, ymax, nx, ny, Ntiles, 
+                         block=(nthreads,1,1), grid=(np.int(Ntiles),1,1), shared=(nthreads*2+1)*4)
+    end_g.record()
+    end_g.synchronize()
+    if timing: print '<<< Particle reshuffling took %f ms'%(start_g.time_till(end_g))
+    drv.memcpy_dtoh(ps_tiles, ps_tiles_gpu)
 
     
-    start = time.clock()
-    # sort particles by tile ID
-    inds = tile_ids.argsort()
-    tile_ids = tile_ids[inds]
-    for n in ps_gpu.dtype.names : ps_gpu[n] = ps_gpu[n][inds]
-    if timing: print '<<< Sorting particle struct took %f s'%(time.clock() - start)
-
-    start = time.clock()
-    # set up tile slices 
-    slices = []
-    n_per_tile = []
-    prev = bisect_left(tile_ids,0)
-    for i in range(0,Ntiles) : 
-        next = bisect_left(tile_ids,i+1,prev)
-        slices.append(slice(prev,next))
-        n_per_tile.append(next-prev)
-        prev = next
-    if timing: print '<<< Setting up tile slices took %f s'%(time.clock()-start)
-  
-    # ----------------------------------------
-    # allocate memory on the GPU for each tile
-    # ----------------------------------------
-    
-    xs_gpu = []
-    ys_gpu = []
-    qt_gpu = []
-    hs_gpu = []
-
-    for i in range(Ntiles) : 
-        if n_per_tile[i] > 0 : 
-            xs_gpu.append(drv.mem_alloc(n_per_tile[i]*4))
-            ys_gpu.append(drv.mem_alloc(n_per_tile[i]*4))
-            qt_gpu.append(drv.mem_alloc(n_per_tile[i]*4))
-            hs_gpu.append(drv.mem_alloc(n_per_tile[i]*4))
-        else : 
-            xs_gpu.append(None)
-            ys_gpu.append(None)
-            qt_gpu.append(None)
-            hs_gpu.append(None)
-    
+    # -------------------------
+    # start going through tiles
+    # -------------------------
+   
+    # initialize the image on the device
     im_gpu = drv.mem_alloc(image.astype(np.float32).nbytes)
     drv.memcpy_htod(im_gpu,image.astype(np.float32))
-
-    # ----------------------
-    # set up the kernel code
-    # ----------------------
-    code = file('/home/itp/roskar/homegrown/template_kernel.cu').read()
-    mod = SourceModule(code)
-    kernel = mod.get_function("tile_render_kernel")
    
 
-    # ---------------------------------------------------------------------
-    # start going through tiles -- first send data to GPU then start kernel
-    # ---------------------------------------------------------------------
-    
-        
-    
+    # allocate key arrays -- these will be keys to sort particles into softening bins
+    keys_gpu = drv.mem_alloc(int(4*hist.sum()))
+    calculate_keys(ps_tiles_gpu, keys_gpu, np.int32(hist.sum()), np.float32(dx), 
+                   block=(nthreads,1,1),grid=(32,1,1))
+
     tile_start = time.clock()
-
-    drv.start_profiler()
     for i in xrange(Ntiles) :
-        sl = slices[i]
-        
-        if n_per_tile[i] > 0 : 
+        n_per_tile = tile_offsets[i+1] - tile_offsets[i]
+        if n_per_tile > 0 : 
             my_stream = streams[i%16]
-        
-            x,y,qt,h = [ps_gpu[arr][sl] for arr in ['x','y','qt','h']]
-        
-            npix = 2.0*h/dx
-            dbin = np.digitize(npix,np.arange(1,npix.max()))
-            sortind = dbin.argsort()
-        
-            x,y,qt,h = x[sortind],y[sortind],qt[sortind],h[sortind]
-
-            drv.memcpy_htod_async(xs_gpu[i],ps_gpu['x'][sl][sortind].astype(np.float32), stream = my_stream)
-            drv.memcpy_htod_async(ys_gpu[i],ps_gpu['y'][sl][sortind].astype(np.float32), stream = my_stream)
-            drv.memcpy_htod_async(qt_gpu[i],ps_gpu['qt'][sl][sortind].astype(np.float32), stream = my_stream)
-            drv.memcpy_htod_async(hs_gpu[i],ps_gpu['h'][sl][sortind].astype(np.float32), stream = my_stream)
-    
-            tile   = tiles_pix[i]
-            tile_p = tiles_physical[i]
-    
-            xmin_t, xmax_t, ymin_t, ymax_t = tile
-            xmin_p, xmax_p, ymin_p, ymax_p  = tile_p
-    
+            
+            xmin_p, xmax_p, ymax_p, ymax_p  = tiles_physical[i]
+            xmin_t, xmax_t, ymin_t, ymax_t  = tiles_pix[i]
+            
             nx_tile = xmax_t-xmin_t+1
             ny_tile = ymax_t-ymin_t+1
-        
-            start = time.clock()
-        
+                    
+            # ----------------------------------------
+            # sort particles by their softening length
+            # ----------------------------------------
+            radix_sort(int(keys_gpu), int(ps_tiles_gpu), tile_offsets[i], n_per_tile)
+            
+                
             # make everything the right size
             xmin_t,xmax_t,ymin_t,ymax_t = map(np.int32,[xmin_t,xmax_t,ymin_t,ymax_t])
             xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
             
-            kernel(xs_gpu[i],ys_gpu[i],qt_gpu[i],hs_gpu[i],np.int32(n_per_tile[i]),
-                   xmin_p,xmax_p,ymin_p,ymax_p,xmin_t,xmax_t,ymin_t,ymax_t,
-                   im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
-                   block=(nthreads,1,1),stream=my_stream)
+            tile_render_kernel(ps_tiles_gpu,np.int32(n_per_tile),
+                               xmin_p,xmax_p,ymin_p,ymax_p,xmin_t,xmax_t,ymin_t,ymax_t,
+                               im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
+                               block=(nthreads,1,1),stream=my_stream)
 
     if timing: print '<<< %d kernels launched in %f s'%(Ntiles,time.clock()-tile_start)
     
