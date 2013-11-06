@@ -18,17 +18,17 @@ struct Particle {
 
 
 
-inline __device__ uint scan1Inclusive(uint idata, volatile uint *s_Data, uint size)
+inline __device__ uint scan1Inclusive(int idata, volatile int *s_Data, int size)
 {
-    uint pos = 2 * threadIdx.x - (threadIdx.x & (size - 1));
+    int pos = 2 * threadIdx.x - (threadIdx.x & (size - 1));
     s_Data[pos] = 0;
     pos += size;
     s_Data[pos] = idata;
 
-    for (uint offset = 1; offset < size; offset <<= 1)
+    for (int offset = 1; offset < size; offset <<= 1)
     {
         __syncthreads();
-        uint t = s_Data[pos] + s_Data[pos - offset];
+        int t = s_Data[pos] + s_Data[pos - offset];
         __syncthreads();
         s_Data[pos] = t;
     }
@@ -36,7 +36,7 @@ inline __device__ uint scan1Inclusive(uint idata, volatile uint *s_Data, uint si
     return s_Data[pos];
 }
 
-inline __device__ uint scan1Exclusive(uint idata, volatile uint *s_Data, uint size)
+inline __device__ uint scan1Exclusive(int idata, volatile int *s_Data, int size)
 {
     return scan1Inclusive(idata, s_Data, size) - idata;
 }
@@ -146,7 +146,7 @@ __device__ void update_image(float *global, float *local, int x_offset, int y_of
     }
 }
 
-__global__ void tile_render_kernel(Particle *ps, int *tile_offsets,
+__global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id, 
                                    float xmin_p, float xmax_p, float ymin_p, float ymax_p,
                                    int xmin, int xmax, int ymin, int ymax, 
                                    float *global_image, int nx_glob, int ny_glob)
@@ -154,7 +154,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets,
 
   int  Nthreads = blockDim.x;
   int idx = threadIdx.x;
-  unsigned int Npart = tile_offsets[blockIdx.x+1] - tile_offsets[blockIdx.x];
+  unsigned int Npart = tile_offsets[tile_id+1] - tile_offsets[tile_id];
   
   // declare shared arrays -- image and base kernel
   __shared__ float local_image[TILE_XDIM*TILE_YDIM];
@@ -169,12 +169,15 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets,
   float i_max_d;
   
   float max_d_curr = 0.0, i_h_cb;
-  int start_ind = 0, end_ind = 0;
+  int start_ind, end_ind;
   
   int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
   int left,upper,xpos,ypos,kmax=31,kmin=1;
   float x,y,qt,loc_val,ker_val;
 
+  start_ind = tile_offsets[tile_id];
+
+  // if (idx==0) printf("----------\ntile = %d \noffset = %d, Npart = %d\nxmin/xmax = %f/%f\nymin/ymax = %f/%f\n",tile_id,start_ind,Npart,xmin_p,xmax_p,ymin_p,ymax_p);
 
   /*
     ------------------------------
@@ -205,12 +208,14 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets,
          ------------------------------------------------- */
       
       /* DO THIS SEARCH IN PARALLEL */
-      for(end_ind=start_ind;end_ind<Npart;) { 
+      for(end_ind=start_ind;end_ind<Npart+tile_offsets[tile_id];) { 
         if (2*ps[end_ind].h < max_d_curr) end_ind++;
         else break;
       }
       Nper_kernel = end_ind-start_ind;
 
+      //      if (idx==0) printf("tile = %d, k = %d, N = %d, max_d = %f, first = %f, last = %f, start = %d, end = %d\n", tile_id, k, Nper_kernel,
+      //                   max_d_curr, 2*ps[start_ind].h, 2*ps[end_ind].h, start_ind, end_ind);
 
       /*-------------------------------------------------------------------------
         only continue with kernel generation if there are particles that need it!
@@ -331,20 +336,21 @@ __global__ void distribute_particles(Particle *ps, Particle *ps_tiles, int *tile
                                float xmin, float xmax, float ymin, float ymax,
                                int nx, int ny, int Ntiles)
 {
-  extern __shared__ uint shared[];
-  uint *flag = &shared[0];
-  uint *counter = &shared[blockDim.x*2];
+  extern __shared__ int shared[];
+  int *flag = &shared[0];
+  int *counter = &shared[blockDim.x*2];
 
   float x,y,h,qt,dx,dy;
   
   int idx = threadIdx.x;
   int done = 0, i,j;
   int ind, tile_val;
-  uint offset, my_flag;
+  int offset, my_flag;
 
   dx = (xmax-xmin)/sqrtf(Ntiles);
   dy = (ymax-ymin)/sqrtf(Ntiles);
 
+  *counter = 0;
 
   for(uint i=idx;i<Npart;i+=blockDim.x) // each block processes all the particles
     {

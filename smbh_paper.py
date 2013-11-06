@@ -761,3 +761,17 @@ def make_general_orbit_plot() :
     plt.xlim(dat['t'][0],dat2['t'][-1])
     
     plt.semilogy()
+
+
+def plot_no_labels(s,width,vmin,vmax,name) : 
+    # gas_merger/2/
+    # gas_merger/4/
+    # gas_merger/5/
+    # gas_merger0.1_thr10_Rx8_nometalcool/5/501
+    # 
+    import utils
+    im = pynbody.plot.image(s.g,width=width,av_z=True)
+    f,ax=plt.subplots()
+    ax.imshow(im,vmin=vmin,vmax=vmax,cmap=plt.cm.Greys_r)
+    utils.clear_labels(ax)
+    plt.savefig(name+'.pdf',bbox_inches='tight')
