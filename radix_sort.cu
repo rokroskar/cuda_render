@@ -26,8 +26,10 @@ float radix_sort(int *keys, Particle *ps, int offset, int num_items)
   err = cudaMalloc((void**) &ps_alt, num_items*sizeof(Particle));
   assert(err==0);
   
+  printf("offset = %d\n",offset);
+
   cub::DoubleBuffer<int> d_keys(keys+offset, keys_alt);
-  cub::DoubleBuffer<Particle> d_vals(ps+offset*4, ps_alt);
+  cub::DoubleBuffer<Particle> d_vals(ps+offset, ps_alt);
 
   // Determine temporary device storage requirements for sorting operation
   void *d_temp_storage = NULL;
@@ -49,10 +51,9 @@ float radix_sort(int *keys, Particle *ps, int offset, int num_items)
   printf("Sort time on GPU = %f ms, %f million keys/s\n", elapsedTime, (float)num_items/elapsedTime*1e3/1e6);
 
   //Sorted keys are referenced by d_keys.Current()
-  err = cudaMemcpy(keys,d_keys.Current(),num_items*sizeof(int),cudaMemcpyDeviceToHost);
-  assert(err==0);
-  err = cudaMemcpy(ps,d_vals.Current(),num_items*sizeof(Particle),cudaMemcpyDeviceToHost);
-  assert(err==0);
+  keys = d_keys.Current();
+  ps = d_vals.Current();
+    
   
   cudaFree(keys_alt);
   cudaFree(ps_alt);

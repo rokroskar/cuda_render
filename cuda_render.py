@@ -12,7 +12,7 @@ import scipy.integrate as integrate
 import math
 import time
 from bisect import bisect_left, bisect_right
-from radix_sort import radix_sort
+
 
 @autojit(nopyton=True)
 def get_tile_ids(tiles_physical,xmin,ymin,ps,tileids) :
@@ -64,6 +64,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     import pycuda.tools
     import pycuda.autoinit
     from pycuda.compiler import SourceModule
+    from radix_sort import radix_sort
 
     global_start = time.clock()
 
@@ -203,9 +204,30 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
    
 
     # allocate key arrays -- these will be keys to sort particles into softening bins
+    start_g.record()
     keys_gpu = drv.mem_alloc(int(4*hist.sum()))
     calculate_keys(ps_tiles_gpu, keys_gpu, np.int32(hist.sum()), np.float32(dx), 
                    block=(nthreads,1,1),grid=(32,1,1))
+    end_g.record()
+    end_g.synchronize()
+    if timing: print '<<< Key generation took %f ms'%(start_g.time_till(end_g))
+
+    keys = np.empty(hist.sum(), dtype=np.int32)
+
+
+    # ----------------------------------------
+    # sort particles by their softening length
+    # ----------------------------------------
+    for i in xrange(Ntiles) : 
+        n_per_tile = tile_offsets[i+1] - tile_offsets[i]
+        if n_per_tile > 0 : 
+            radix_sort(int(keys_gpu), int(ps_tiles_gpu), tile_offsets[i], n_per_tile)
+
+    drv.memcpy_dtoh(keys,keys_gpu)
+    drv.memcpy_dtoh(ps_tiles,ps_tiles_gpu)
+#    return keys,ps_tiles,tile_offsets,dx
+        
+    drv.Context.synchronize()
 
     tile_start = time.clock()
     for i in xrange(Ntiles) :
@@ -213,23 +235,18 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
         if n_per_tile > 0 : 
             my_stream = streams[i%16]
             
-            xmin_p, xmax_p, ymax_p, ymax_p  = tiles_physical[i]
+            xmin_p, xmax_p, ymin_p, ymax_p  = tiles_physical[i]
             xmin_t, xmax_t, ymin_t, ymax_t  = tiles_pix[i]
             
             nx_tile = xmax_t-xmin_t+1
             ny_tile = ymax_t-ymin_t+1
                     
-            # ----------------------------------------
-            # sort particles by their softening length
-            # ----------------------------------------
-            radix_sort(int(keys_gpu), int(ps_tiles_gpu), tile_offsets[i], n_per_tile)
-            
                 
             # make everything the right size
             xmin_t,xmax_t,ymin_t,ymax_t = map(np.int32,[xmin_t,xmax_t,ymin_t,ymax_t])
             xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
             
-            tile_render_kernel(ps_tiles_gpu,np.int32(n_per_tile),
+            tile_render_kernel(ps_tiles_gpu,tile_offsets_gpu,np.int32(i),
                                xmin_p,xmax_p,ymin_p,ymax_p,xmin_t,xmax_t,ymin_t,ymax_t,
                                im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
                                block=(nthreads,1,1),stream=my_stream)
@@ -251,6 +268,9 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     if timing: print '<<< %d tiles rendered in %f s'%(Ntiles,time.clock()-tile_start)
 
     if timing: print '<<< Total render done in %f s\n'%(time.clock()-global_start)
+
+    del(start_g)
+    del(end_g)
     
     return image
 
