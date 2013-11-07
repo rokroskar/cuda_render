@@ -41,7 +41,7 @@ inline __device__ uint scan1Exclusive(int idata, volatile int *s_Data, int size)
     return scan1Inclusive(idata, s_Data, size) - idata;
 }
 
-inline __device__ float kernel_value(float d, float h) 
+__device__ float kernel_value(float d, float h) 
 {
   if (d < 1) return (1.-(3./2)*(d*d) + (3./4.)*(d*d*d))*PI_I/(h*h*h);
   else if (d <= 2.0) return 0.25*powf((2.-d),3)*PI_I/(h*h*h); 
@@ -179,7 +179,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   int start_ind, end_ind;
   
   int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
-  int left,upper,xpos,ypos,kmax=101,kmin=1;
+  int left,upper,xpos,ypos,kmax=31,kmin=1;
   float x,y,qt,loc_val,ker_val;
 
   start_ind = tile_offsets[tile_id];
@@ -221,9 +221,6 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
       }
       Nper_kernel = end_ind-start_ind;
 
-      //      if (idx==0) printf("tile = %d, k = %d, N = %d, max_d = %f, first = %f, last = %f, start = %d, end = %d\n", tile_id, k, Nper_kernel,
-      //                   max_d_curr, 2*ps[start_ind].h, 2*ps[end_ind].h, start_ind, end_ind);
-
       /*-------------------------------------------------------------------------
         only continue with kernel generation if there are particles that need it!
         -------------------------------------------------------------------------*/
@@ -231,7 +228,9 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
         {
           //  kernel_func(kernel,1.0,max_d_curr);
           i_h_cb = 8.*i_max_d*i_max_d*i_max_d;
-          i_h = 1./(k*dx/2.0);
+          h = max_d_curr/2.0;
+          i_h = 1./h;
+
           /*
             paint each particle on the local image
           */
@@ -242,7 +241,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
               y =  ps[pind].y;
               h =  ps[pind].h;
               qt = ps[pind].qt;
-              
+
               xpos = __float2int_rd((x-xmin_p)/dx);
               ypos = __float2int_rd((y-ymin_p)/dy);
               
