@@ -155,7 +155,8 @@ def central_mass(path, radius=0.5, fig = None) :
         bhind = bh_index(s)
         sph1 = pyn.filt.Sphere(radius,s[bhind[0]]['pos'].flatten())
         sph2 = pyn.filt.Sphere(radius,s[bhind[1]]['pos'].flatten())
-        
+
+               
         cen_mass_g[i] = s[sph1 or sph2].g['mass'].sum().in_units('Msol')
         cen_mass_s[i] = s[sph1 or sph2].s['mass'].sum().in_units('Msol')
         time[i] = s.properties['time'].in_units('Myr')
@@ -179,6 +180,7 @@ def plot_sequence() :
     pp = PdfPages('smbh_plots.pdf')
 
     flist = ['551','592','601','612','634','676']
+    flist2 = ['1000','1010','1020','1030','1040','1050']
 
     basename = 'gas_merger0.1_thr10_Rx8_highSFthresh.00'
 
@@ -191,7 +193,7 @@ def plot_sequence() :
         sim.g['rho'].convert_units('m_p cm^-3')
         
         pyn.analysis.halo.center(sim,ind=bh_index(sim),mode='ind')
-    
+
         plt.subplot(2,2,1)
 
         plot_central(sim, clear = False, units='m_p cm^-3',vmin=-1,vmax=5)

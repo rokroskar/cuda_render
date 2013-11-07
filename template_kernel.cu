@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#define KSIZE 31
+#define KSIZE 101
 #define TILE_XDIM 100
 #define TILE_YDIM 100
 #define TILE_SIZE TILE_XDIM*TILE_YDIM
@@ -39,6 +39,13 @@ inline __device__ uint scan1Inclusive(int idata, volatile int *s_Data, int size)
 inline __device__ uint scan1Exclusive(int idata, volatile int *s_Data, int size)
 {
     return scan1Inclusive(idata, s_Data, size) - idata;
+}
+
+inline __device__ float kernel_value(float d, float h) 
+{
+  if (d < 1) return (1.-(3./2)*(d*d) + (3./4.)*(d*d*d))*PI_I/(h*h*h);
+  else if (d <= 2.0) return 0.25*powf((2.-d),3)*PI_I/(h*h*h); 
+  else return 0.0;
 }
 
 __device__ void kernel_func(float *kernel, float h, float max_d)
@@ -168,11 +175,11 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
 
   float i_max_d;
   
-  float max_d_curr = 0.0, i_h_cb;
+  float max_d_curr = 0.0, i_h_cb, i_h, d, h;
   int start_ind, end_ind;
   
   int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
-  int left,upper,xpos,ypos,kmax=31,kmin=1;
+  int left,upper,xpos,ypos,kmax=101,kmin=1;
   float x,y,qt,loc_val,ker_val;
 
   start_ind = tile_offsets[tile_id];
@@ -193,7 +200,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
     {
       __syncthreads();
       // set up the base kernel
-      kernel_distance(kernel,dx,dy);
+      //      kernel_distance(kernel,dx,dy);
  
       /*
       max distance for this kernel
@@ -222,18 +229,18 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
         -------------------------------------------------------------------------*/
       if (Nper_kernel > 0) 
         {
-          kernel_func(kernel,1.0,max_d_curr);
+          //  kernel_func(kernel,1.0,max_d_curr);
           i_h_cb = 8.*i_max_d*i_max_d*i_max_d;
-          
+          i_h = 1./(k*dx/2.0);
           /*
             paint each particle on the local image
           */
 
           for (pind=start_ind+idx;pind<end_ind;pind+=Nthreads)
             {
-              x = ps[pind].x;
-              y = ps[pind].y;
-              //h = hs[inds[pind]];
+              x =  ps[pind].x;
+              y =  ps[pind].y;
+              h =  ps[pind].h;
               qt = ps[pind].qt;
               
               xpos = __float2int_rd((x-xmin_p)/dx);
@@ -249,9 +256,12 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
                       if((i+left >= 0) && (i+left < nx) &&
                          (j+upper >= 0) && (j+upper < ny))
                         {
-                          ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
-                          loc_val = local_image[(i+left)+(j+upper)*nx];
-                          local_image[(i+left)+(j+upper)*nx] = loc_val + ker_val;
+                          //                          ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
+                          //                          loc_val = local_image[(i+left)+(j+upper)*nx];
+                          d = sqrtf((float)(i-k/2)*(i-k/2)+
+                                    (float)(j-k/2)*(j-k/2));
+
+                          local_image[(i+left)+(j+upper)*nx] += kernel_value(d*i_h, h);
                         }
                     }
                 }
@@ -394,7 +404,7 @@ __global__ void distribute_particles(Particle *ps, Particle *ps_tiles, int *tile
       if (my_flag) atomicAdd(counter,1);
     }
   __syncthreads();
-  if (idx==0) printf("Block %d had %d particles\n", blockIdx.x,*counter);
+  //  if (idx==0) printf("Block %d had %d particles\n", blockIdx.x,*counter);
 }
 
 
@@ -403,4 +413,96 @@ __global__ void calculate_keys(Particle *ps, int *keys, int Npart, float dx)
   float idx2 = 1./(dx/2.0);
   for(int i=threadIdx.x + blockDim.x*blockIdx.x; i < Npart; i += blockDim.x*gridDim.x)
     keys[i] = 2.0*ps[i].h*idx2;
+}
+
+
+__global__ void tile_render_kernel_single(Particle *ps, int Npart, int *k_offsets,
+                                          float xmin_p, float xmax_p, float ymin_p, float ymax_p,
+                                          int xmin, int xmax, int ymin, int ymax, 
+                                          float *global_image, int nx_glob, int ny_glob)
+{    
+  __shared__ float kernel[101*101];
+
+  int Nthreads = blockDim.x*gridDim.x;
+  int idx = threadIdx.x+blockDim.x*blockIdx.x;
+  
+  int nx = xmax-xmin+1;
+  int ny = ymax-ymin+1;
+  
+  float dx = (xmax_p-xmin_p)/float(nx);
+  float dy = (ymax_p-ymin_p)/float(ny);
+
+  float i_max_d;
+  
+  float max_d_curr = 0.0, i_h_cb;
+  int start_ind, end_ind;
+  
+  int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
+  int left,upper,xpos,ypos,kmax=101,kmin=1;
+  float x,y,qt,loc_val,ker_val;
+  /*
+    ------------------------------
+    start the loop through kernels
+    ------------------------------
+  */
+
+  for(i=idx;i<nx_glob*ny_glob;i+=Nthreads) global_image[i]=0.0;
+
+  for(int k=kmin; k < kmax+2; k+=2) 
+    {
+      __syncthreads();
+      // set up the base kernel
+      kernel_distance(kernel,dx,dy);
+ 
+      /*
+      max distance for this kernel
+      */
+      max_d_curr = dx*floorf(k/2.0);
+      max_d_curr = (max_d_curr < dx/2.0) ? dx/2.0 : max_d_curr;
+      
+      i_max_d = 1./max_d_curr;
+      
+      /*-------------------------------------------------------------------------
+        only continue with kernel generation if there are particles that need it!
+        -------------------------------------------------------------------------*/
+      Nper_kernel = k_offsets[k] - k_offsets[k-1];
+ 
+      if (Nper_kernel > 0) 
+        {
+          kernel_func(kernel,1.0,max_d_curr);
+          i_h_cb = 8.*i_max_d*i_max_d*i_max_d;
+          
+          /*
+            paint each particle on the local image
+          */
+
+          for (pind=idx+k_offsets[k-1]; pind < k_offsets[k]; pind += Nthreads)
+            {
+              x = ps[pind].x;
+              y = ps[pind].y;
+              //h = hs[inds[pind]];
+              qt = ps[pind].qt;
+              
+              xpos = __float2int_rd((x-xmin_p)/dx);
+              ypos = __float2int_rd((y-ymin_p)/dy);
+              
+              left = xpos-k/2;
+              upper = ypos-k/2;
+              
+              for(i = 0; i < k; i++) 
+                {
+                  for(j = 0; j < k; j++) 
+                    {
+                      if((i+left >= 0) && (i+left < nx) &&
+                         (j+upper >= 0) && (j+upper < ny))
+                        {
+                          ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
+                          atomicAdd(&global_image[(i+left)+(j+upper)*nx], ker_val);
+                        }
+                    }
+                }
+            }
+        }
+    }
+  __syncthreads();
 }

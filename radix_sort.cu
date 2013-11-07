@@ -26,7 +26,7 @@ float radix_sort(int *keys, Particle *ps, int offset, int num_items)
   err = cudaMalloc((void**) &ps_alt, num_items*sizeof(Particle));
   assert(err==0);
   
-  printf("offset = %d\n",offset);
+  //printf("offset = %d\n",offset);
 
   cub::DoubleBuffer<int> d_keys(keys+offset, keys_alt);
   cub::DoubleBuffer<Particle> d_vals(ps+offset, ps_alt);
@@ -48,7 +48,7 @@ float radix_sort(int *keys, Particle *ps, int offset, int num_items)
   cudaDeviceSynchronize();
 
   cudaEventElapsedTime(&elapsedTime,start,end);
-  printf("Sort time on GPU = %f ms, %f million keys/s\n", elapsedTime, (float)num_items/elapsedTime*1e3/1e6);
+  //  printf("Sort time on GPU = %f ms, %f million keys/s\n", elapsedTime, (float)num_items/elapsedTime*1e3/1e6);
 
   //Sorted keys are referenced by d_keys.Current()
   keys = d_keys.Current();
