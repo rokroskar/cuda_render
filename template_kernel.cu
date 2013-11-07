@@ -258,10 +258,10 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
                         {
                           //                          ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
                           //                          loc_val = local_image[(i+left)+(j+upper)*nx];
-                          d = sqrtf((float)(i-k/2)*(i-k/2)+
-                                    (float)(j-k/2)*(j-k/2));
+                          d = sqrtf((float)(i-k/2)*(i-k/2)*dx*dx+
+                                    (float)(j-k/2)*(j-k/2)*dy*dy);
 
-                          local_image[(i+left)+(j+upper)*nx] += kernel_value(d*i_h, h);
+                          local_image[(i+left)+(j+upper)*nx]+=kernel_value(d*i_h, h)*qt*i_h_cb;
                         }
                     }
                 }
