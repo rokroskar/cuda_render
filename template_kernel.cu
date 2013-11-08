@@ -153,11 +153,12 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
 {    
 
   int Nthreads = blockDim.x*gridDim.x;
-  int idx = threadIdx.x + blockIdx.x*gridDim.x;
+  int idx = threadIdx.x + blockIdx.x*blockDim.x;
   unsigned int Npart = tile_offsets[tile_id+1] - tile_offsets[tile_id];
   
   // declare shared array for local image 
   __shared__ float local_image[TILE_XDIM*TILE_YDIM];
+  __shared__ int counter;
 
   int nx = xmax-xmin+1;
   int ny = ymax-ymin+1;
@@ -180,6 +181,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   kmin = 1;
   kmax = 31;
 
+  counter =0;
   /*
     ------------------------------
     start the loop through kernels
@@ -188,7 +190,6 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
 
   for(i=threadIdx.x;i<TILE_SIZE;i+=blockDim.x) local_image[i]=0.0;
 
-  if((gridDim.x>1) && (threadIdx.x==0)) printf("tile = %d\tblockId = %d\tNthreads = %d\tstart_ind = %d\n",tile_id, blockIdx.x, Nthreads, start_ind);
 
   for(int k=kmin; k < kmax+2; k+=2) 
     {
@@ -210,14 +211,13 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
       
       /* DO THIS SEARCH IN PARALLEL */
       start_t = clock();
-      for(end_ind=start_ind;end_ind<Npart+tile_offsets[tile_id];) { 
+      for(end_ind=start_ind;end_ind<tile_offsets[tile_id+1];) { 
         if (2*ps[end_ind].h < max_d_curr) end_ind++;
         else break;
       }
       end_t = clock();
       
       Nper_kernel = end_ind-start_ind;
-
 
       /*-------------------------------------------------------------------------
         only continue with kernel generation if there are particles that need it!
@@ -232,7 +232,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
           /*
             paint each particle on the local image
           */
-
+          counter = 0;
           for (pind=start_ind+idx;pind<end_ind;pind+=Nthreads)
             {
               x =  ps[pind].x;
@@ -260,6 +260,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
                         }
                     }
                 }
+              atomicAdd(&counter,1);
             }
           start_ind = end_ind;
         }
@@ -267,6 +268,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
+
 }
 
 
