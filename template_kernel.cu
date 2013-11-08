@@ -41,7 +41,7 @@ inline __device__ uint scan1Exclusive(int idata, volatile int *s_Data, int size)
     return scan1Inclusive(idata, s_Data, size) - idata;
 }
 
-__device__ float kernel_value(float d, float h) 
+inline __device__ float kernel_value(float d, float h) 
 {
   if (d < 1) return (1.-(3./2)*(d*d) + (3./4.)*(d*d*d))*PI_I/(h*h*h);
   else if (d <= 2.0) return 0.25*powf((2.-d),3)*PI_I/(h*h*h); 
@@ -136,20 +136,13 @@ __device__ void kernel_distance(float *kernel,float dx,float dy)
 __device__ void update_image(float *global, float *local, int x_offset, int y_offset, int nx_glob, int nx_loc, int ny_loc)
 {
   int idx = threadIdx.x;
-  int pix_per_thread = nx_loc*ny_loc/(blockDim.x);
-
-  int my_start, my_end, loc_x, loc_y;
+  int loc_x, loc_y;
   
-  my_start = idx*pix_per_thread;
-  my_end = my_start + pix_per_thread;
-  // if this is the last thread, make it take the rest of the pixels
-  if (idx == blockDim.x*blockIdx.x-1) my_end = nx_loc*ny_loc;
-  
-  for(int p = my_start; p < my_end; p++) 
+  for(int p = idx; p < nx_loc*ny_loc; p+=blockDim.x) 
     {
       loc_y = p/nx_loc;
       loc_x = p - loc_y*nx_loc;
-      global[(loc_x+x_offset) + (loc_y+y_offset)*nx_glob] += local[p];
+      atomicAdd(&global[(loc_x+x_offset) + (loc_y+y_offset)*nx_glob], local[p]);
     }
 }
 
@@ -159,13 +152,12 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
                                    float *global_image, int nx_glob, int ny_glob)
 {    
 
-  int  Nthreads = blockDim.x;
-  int idx = threadIdx.x;
+  int Nthreads = blockDim.x*gridDim.x;
+  int idx = threadIdx.x + blockIdx.x*gridDim.x;
   unsigned int Npart = tile_offsets[tile_id+1] - tile_offsets[tile_id];
   
-  // declare shared arrays -- image and base kernel
+  // declare shared array for local image 
   __shared__ float local_image[TILE_XDIM*TILE_YDIM];
-  __shared__ float kernel[KSIZE*KSIZE];
 
   int nx = xmax-xmin+1;
   int ny = ymax-ymin+1;
@@ -178,13 +170,15 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   float max_d_curr = 0.0, i_h_cb, i_h, d, h;
   int start_ind, end_ind;
   
-  int i,j,pind,Nper_kernel,Nper_thread,my_start = 0,my_end=0;
-  int left,upper,xpos,ypos,kmax=31,kmin=1;
-  float x,y,qt,loc_val,ker_val;
+  int i,j,pind,Nper_kernel;
+  int left,upper,xpos,ypos,kmax,kmin;
+  float x,y,qt;
+
+  clock_t start_t, end_t;
 
   start_ind = tile_offsets[tile_id];
-
-  // if (idx==0) printf("----------\ntile = %d \noffset = %d, Npart = %d\nxmin/xmax = %f/%f\nymin/ymax = %f/%f\n",tile_id,start_ind,Npart,xmin_p,xmax_p,ymin_p,ymax_p);
+  kmin = 1;
+  kmax = 31;
 
   /*
     ------------------------------
@@ -192,10 +186,10 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
     ------------------------------
   */
 
-  for(i=idx;i<TILE_SIZE;i+=Nthreads) local_image[i]=0.0;
-  
-  //  if (idx==0) printf("max/min = %d %d\n", xmax, xmin);
-  //for(int m=0;m<5000;m++){
+  for(i=threadIdx.x;i<TILE_SIZE;i+=blockDim.x) local_image[i]=0.0;
+
+  if((gridDim.x>1) && (threadIdx.x==0)) printf("tile = %d\tblockId = %d\tNthreads = %d\tstart_ind = %d\n",tile_id, blockIdx.x, Nthreads, start_ind);
+
   for(int k=kmin; k < kmax+2; k+=2) 
     {
       __syncthreads();
@@ -203,7 +197,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
       //      kernel_distance(kernel,dx,dy);
  
       /*
-      max distance for this kernel
+      max distance for this k
       */
       max_d_curr = dx*floorf(k/2.0);
       max_d_curr = (max_d_curr < dx/2.0) ? dx/2.0 : max_d_curr;
@@ -215,11 +209,15 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
          ------------------------------------------------- */
       
       /* DO THIS SEARCH IN PARALLEL */
+      start_t = clock();
       for(end_ind=start_ind;end_ind<Npart+tile_offsets[tile_id];) { 
         if (2*ps[end_ind].h < max_d_curr) end_ind++;
         else break;
       }
+      end_t = clock();
+      
       Nper_kernel = end_ind-start_ind;
+
 
       /*-------------------------------------------------------------------------
         only continue with kernel generation if there are particles that need it!
@@ -255,12 +253,10 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
                       if((i+left >= 0) && (i+left < nx) &&
                          (j+upper >= 0) && (j+upper < ny))
                         {
-                          //                          ker_val = kernel[(i+(KSIZE-k)/2)+KSIZE*(j+(KSIZE-k)/2)]*qt*i_h_cb;
-                          //                          loc_val = local_image[(i+left)+(j+upper)*nx];
                           d = sqrtf((float)(i-k/2)*(i-k/2)*dx*dx+
                                     (float)(j-k/2)*(j-k/2)*dy*dy);
 
-                          local_image[(i+left)+(j+upper)*nx]+=kernel_value(d*i_h, h)*qt*i_h_cb;
+                          atomicAdd(&local_image[(i+left)+(j+upper)*nx],kernel_value(d*i_h, 1.0)*qt*i_h_cb);
                         }
                     }
                 }
@@ -271,7 +267,6 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
-  //  }
 }
 
 

@@ -122,13 +122,12 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     Ntiles = tiles_pix.shape[0]
 
      
-    streams = [drv.Stream() for i in range(16)]    
     
     # ------------------
     # set up the kernels
     # ------------------
     code = file('/home/itp/roskar/homegrown/template_kernel.cu').read()
-    mod = SourceModule(code)
+    mod = SourceModule(code,options=["--ptxas-options=-v"])
     tile_histogram = mod.get_function("tile_histogram")
     distribute_particles = mod.get_function("distribute_particles")
     tile_render_kernel = mod.get_function("tile_render_kernel")
@@ -230,10 +229,13 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     drv.Context.synchronize()
 
     tile_start = time.clock()
+    
+    streams = [drv.Stream() for i in range(16)]    
+    
     for i in xrange(Ntiles) :
         n_per_tile = tile_offsets[i+1] - tile_offsets[i]
         if n_per_tile > 0 : 
-            my_stream = streams[i%16]
+            my_stream = streams[i%(16)]
             
             xmin_p, xmax_p, ymin_p, ymax_p  = tiles_physical[i]
             xmin_t, xmax_t, ymin_t, ymax_t  = tiles_pix[i]
@@ -246,10 +248,13 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
             xmin_t,xmax_t,ymin_t,ymax_t = map(np.int32,[xmin_t,xmax_t,ymin_t,ymax_t])
             xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
             
+            if n_per_tile > nthreads*32: ngrid=4
+            else : ngrid = 1
+
             tile_render_kernel(ps_tiles_gpu,tile_offsets_gpu,np.int32(i),
                                xmin_p,xmax_p,ymin_p,ymax_p,xmin_t,xmax_t,ymin_t,ymax_t,
                                im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
-                               block=(nthreads,1,1),stream=my_stream)
+                               block=(nthreads,1,1),grid=(ngrid,1,1),stream=my_stream)
 
     if timing: print '<<< %d kernels launched in %f s'%(Ntiles,time.clock()-tile_start)
     
