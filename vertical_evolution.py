@@ -370,7 +370,7 @@ def hz_feh_ofe(s,gridsize=(20,20),rmin=4,rmax=9,ncpu=pynbody.config['number_of_t
     plt.contour(xs,ys,np.log10(hist),np.linspace(1,4,10),colors='red')
     im = plt.imshow(hr,origin='lower',
                     extent=(min(xs), max(xs), min(ys), max(ys)),
-                    aspect='auto',vmin=1.5,vmax=4.5,interpolation='nearest')
+                    aspect='auto',vmin=1.5,vmax=6.0,interpolation='nearest')
         
     cb = plt.colorbar(im)
     cb.set_label('$h_r [kpc]$',fontsize='smaller')
@@ -889,44 +889,96 @@ def make_resolution_flare_plot(slist) :
     return fits
 
 
-def low_alpha_corner(s, rmin=4,rmax=9) : 
+def low_alpha_corner(s, rmin=7,rmax=9) : 
     fehfilt = pynbody.filt.BandPass('feh',.1,.2)
     ofefilt = pynbody.filt.LowPass('ofe', -.1)
+    rformfilt = pynbody.filt.LowPass('rform',3.0)
+
     sn = pynbody.filt.BandPass('rxy',rmin,rmax)
+
+    sf = s.s[fehfilt&ofefilt&sn]
+    ssn = s.s[sn]
 
     f,axs=plt.subplots(2,3,figsize=(10,10))
 
     axs = axs.flatten()
     print len(s.s[fehfilt&ofefilt&sn])
-    axs[0].hist(s.s[fehfilt&ofefilt&sn]['age'],bins=100,histtype='step')
+
+    # 
+    # Age histogram 
+    # 
+
+    axs[0].hist(sf['age'],bins=100,histtype='step')
     axs[0].set_xlabel('Age [Gyr]')
-    
-    axs[1].hist(s.s[fehfilt&ofefilt&sn]['rform'],bins=100,histtype='step',cumulative=True, normed=True)
+
+
+    # 
+    # formation radius cumulative distribution function 
+    #
+
+    axs[1].hist(sf['rform'],bins=100,histtype='step',cumulative=True, normed=True)
     axs[1].set_xlabel('$R_{form}$ [kpc]')
     axs[1].set_ylim(0,1.0)
     
-    axs[2].hist(s.s[fehfilt&ofefilt&sn]['jz']/s.s[fehfilt&ofefilt&sn]['jzmaxe'],bins=100,histtype='step')
+    #
+    # circularity plot
+    #
+    
+    young = pynbody.filt.LowPass('age','3.5 Gyr')
+    old = pynbody.filt.HighPass('age','6. Gyr')
+    axs[2].hist(sf['jz']/sf['jzmaxe'],bins=20,histtype='step',normed=True)
+    axs[2].hist(sf[young]['jz']/sf[young]['jzmaxe'],color='k',bins=20,histtype='step',normed=True)
+    axs[2].hist(sf[old]['jz']/sf[old]['jzmaxe'],color='r',bins=20,histtype='step',normed=True)
     axs[2].set_xlabel('$J_z/J_{circ}$')
     
-    axs[3].plot(s.s[fehfilt&ofefilt&sn]['rform'], 
-                s.s[fehfilt&ofefilt&sn]['age'], '.', alpha=.1)
+
+    #
+    # Age vs. Rform scatterplot
+    #
+
+    axs[3].plot(sf['rform'], 
+                sf['age'], '.', alpha=.1)
     axs[3].set_xlabel('$R_{form}$')
     axs[3].set_ylabel('Age [Gyr]')
 
-    axs[4].plot(s.s[fehfilt&ofefilt&sn]['rform'], 
-                s.s[fehfilt&ofefilt&sn]['jz']/s.s[fehfilt&ofefilt&sn]['jzmaxe'], '.', alpha=.1)
+    #
+    # circularity vs. rform scatterplot
+    # 
+
+    axs[4].plot(sf['rform'], 
+                sf['jz']/sf['jzmaxe'], '.', alpha=.1)
     axs[4].set_xlabel('$R_{form}$')
     axs[4].set_ylabel('$J_z/J_{circ}$')
 
-    prof = pynbody.analysis.profile.Profile(s.s[fehfilt&ofefilt&sn],calc_x=lambda x: x['age'],type='log',nbins=10,min=2)
 
-    prof2 = pynbody.analysis.profile.Profile(s.s[sn],calc_x=lambda x: x['age'],type='log',nbins=10,min=2)
+    #
+    # velocity dispersion profile as a fxn of age
+    #
+    
+    prof = pynbody.analysis.profile.Profile(sf,
+                                            calc_x=lambda x: x['age'],
+                                            type='log',nbins=10,min=2)
+    g1 = np.where(prof['n'] > 100)[0]
 
-    axs[5].plot(prof['rbins'],np.sqrt(prof['vr_disp']**2+prof['vt_disp']**2+prof['vz_disp']**2),'k-',label=r'$\sigma_{tot}$',linewidth=2)
-    axs[5].plot(prof['rbins'],prof['vr_disp'],'k--',label=r'$\sigma_{tot}$',linewidth=2)
-    axs[5].plot(prof2['rbins'],np.sqrt(prof2['vr_disp']**2+prof2['vt_disp']**2+prof2['vz_disp']**2),'r-',label=r'$\sigma_{tot}$',linewidth=2)
-    axs[5].plot(prof2['rbins'],prof2['vr_disp'],'r--',label=r'$\sigma_{tot}$',linewidth=2)
+    prof2 = pynbody.analysis.profile.Profile(ssn,
+                                             calc_x=lambda x: x['age'],
+                                             type='log',nbins=10,min=2)
+
+    g2 = np.where(prof['n'] > 10)[0]
+
+    axs[5].plot(prof['rbins'][g1],np.sqrt(prof['vr_disp'][g1]**2+prof['vt_disp'][g1]**2+prof['vz_disp'][g1]**2),
+                'k-',label=r'$\sigma_{tot}$',linewidth=2)
+    axs[5].plot(prof['rbins'][g1],prof['vr_disp'][g1],'k--',label=r'$\sigma_{R}$',linewidth=2)
+    axs[5].plot(prof['rbins'][g1],prof['vz_disp'][g1],'k:',label=r'$\sigma_{R}$',linewidth=2)
+    
+    
+    axs[5].plot(prof2['rbins'],np.sqrt(prof2['vr_disp']**2+prof2['vt_disp']**2+prof2['vz_disp']**2),
+                'r-',label=r'$\sigma_{tot}$',linewidth=2)
+    axs[5].plot(prof2['rbins'],prof2['vr_disp'],'r--',label=r'$\sigma_{R}$',linewidth=2)
+    axs[5].plot(prof2['rbins'],prof2['vz_disp'],'r:',label=r'$\sigma_{R}$',linewidth=2)
+
     axs[5].set_xlabel('Age [Gyr]')
     axs[5].set_ylabel('$\sigma$')
 
     
+    return prof
