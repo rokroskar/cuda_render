@@ -242,15 +242,8 @@ def template_kernel_cpu(xs,ys,qts,hs,nx,ny,xmin,xmax,ymin,ymax,two_d) :
                 ypos = physical_to_pixel(y,ymin,dy)
     
                 left  = xpos-k/2
-                right = xpos+k/2+1
                 upper = ypos-k/2
-                lower = ypos+k/2+1
 
-                ker_left = abs(min(left,0))
-                ker_right = k + min(nx-right,0)
-                ker_upper = abs(min(upper,0))
-                ker_lower = k + min(ny-lower,0)
-                
                 for i in xrange(0,k) : 
                     for j in xrange(0,k): 
                         if ((i+left>=0) and (i+left < nx) and (j+upper >=0) and (j+upper<ny)) : 
