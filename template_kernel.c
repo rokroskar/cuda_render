@@ -96,6 +96,7 @@ void tile_render_kernel(double *xs, double *ys, double *qts, double *hs, int Npa
     ------------------------------
   */
   
+
   kmax = (int)floor(hs[Npart-1]*4.0/dx);
   kmin = (int)floor(hs[0]*4.0/dx);
 

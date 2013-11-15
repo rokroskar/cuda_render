@@ -6,7 +6,9 @@ import numpy
 sourcefiles = ['template_wrapper.pyx']
 ext_modules = [Extension("template_wrapper", 
                           sourcefiles,
-                         include_dirs = [numpy.get_include()]
+                         include_dirs = [numpy.get_include()],
+                         extra_compile_args=["-std=c99","-g"],
+                         extra_link_args=["-g"]
                           )]
 
 setup(

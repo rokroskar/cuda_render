@@ -12,6 +12,7 @@ import scipy.integrate as integrate
 import math
 import time
 import bisect
+from template_wrapper import tile_render_kernel
 
 @autojit
 def get_tile_ids(tiles_physical,xmin,ymin,xs,ys,tileids) :
@@ -94,9 +95,9 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     if timing: print '<<< Sorted search took %f s'%(time.clock()-start)
 
         
-    # -----------------------------------------
-    # set up streams and transfer particle data
-    # -----------------------------------------
+    # ----------------------
+    # transfer particle data
+    # ----------------------
     
     start = time.clock()
 
@@ -117,8 +118,6 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     im_gpu = drv.mem_alloc(image.astype(np.float32).nbytes)
     drv.memcpy_htod(im_gpu,image.astype(np.float32))
 
-    inds_gpu = drv.mem_alloc(xs.astype(np.int32).nbytes)
-    
     if timing: print "<<< Data transfer to device took %f s"%(time.clock()-start)
 
     code = file('/home/itp/roskar/homegrown/template_kernel.cu').read()
@@ -128,44 +127,77 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     kernel = mod.get_function("tile_render_kernel")
    
     Ntiles = tiles_pix.shape[0]
-        
-    streams = [drv.Stream() for i in range(16)]    
+
+    # ---------------------------------------------------------------------------
+    # Determing indices that each tile needs -- this is gonna be easy but slow...
+    # ---------------------------------------------------------------------------
     
-    tile_start = time.clock()
+    indlist = np.array([],np.int32)
+    parts_per_tile = []
+    start = time.clock()
+    for i in xrange(Ntiles) : 
+        xmin_p, xmax_p, ymin_p, ymax_p  = tiles_physical[i]
+        inds = np.where((xs_s + 2*hs_s >= xmin_p) & (xs_s - 2*hs_s <= xmax_p) & 
+                        (ys_s + 2*hs_s >= ymin_p) & (ys_s - 2*hs_s <= ymax_p))[0]      
+        indlist = np.append(indlist,inds)
+        parts_per_tile.append(len(inds))
+    parts_per_tile = np.array(parts_per_tile,dtype=np.int32)
+
+    if timing: print '<<< Figuring out tile indices took %f s'%(time.clock()-start)
+
+    # copy indices to the gpu
+    inds_gpu = drv.mem_alloc(indlist.astype(np.int32).nbytes)
+    drv.memcpy_htod_async(inds_gpu,inds.astype(np.int32))
+
+    parts_per_tile_gpu = drv.mem_alloc(parts_per_tile.astype(np.int32).nbytes)
+    drv.memcpy_htod_async(parts_per_tile_gpu,parts_per_tile.astype(np.int32))
+
+    # won't need this    streams = [drv.Stream() for i in range(16)]    
+    
+    #tile_start = time.clock()
 
     drv.start_profiler()
-    for i in xrange(Ntiles) :
+    #for i in xrange(Ntiles) :
         
-        tile   = tiles_pix[i]
-        tile_p = tiles_physical[i]
+    #    tile   = tiles_pix[i]
+    #    tile_p = tiles_physical[i]
     
-        xmin_t, xmax_t, ymin_t, ymax_t = tile
-        xmin_p, xmax_p, ymin_p, ymax_p  = tile_p
+    #    xmin_t, xmax_t, ymin_t, ymax_t = tile
+    #    xmin_p, xmax_p, ymin_p, ymax_p  = tile_p
     
-        nx_tile = xmax_t-xmin_t+1
-        ny_tile = ymax_t-ymin_t+1
-        where_start = time.clock()
-        inds = np.where((xs_s + 2*hs_s >= xmin_p) & (xs_s - 2*hs_s <= xmax_p) & 
-                        (ys_s + 2*hs_s >= ymin_p) & (ys_s - 2*hs_s <= ymax_p))[0]                     
-        if timing: print '<<< Tile where took %f s'%(time.clock()-where_start)
-        if inds.shape[0] > 0 : 
-            start = time.clock()
+    #    nx_tile = xmax_t-xmin_t+1
+    #    ny_tile = ymax_t-ymin_t+1
+    #    where_start = time.clock()
+    #    inds = np.where((xs_s + 2*hs_s >= xmin_p) & (xs_s - 2*hs_s <= xmax_p) & 
+    #                    (ys_s + 2*hs_s >= ymin_p) & (ys_s - 2*hs_s <= ymax_p))[0]                     
+    #    if timing: print '<<< Tile where took %f s'%(time.clock()-where_start)
+    #    if inds.shape[0] > 0 : 
+    #        start = time.clock()
 
-            my_stream = streams[i%16]
+    #    my_stream = streams[i%16]
 
-            kmax = int(math.ceil(hs_s[inds].max()*2.0/dx*2.0))+1
-            kmin = int(math.floor(hs_s[inds].min()*2.0/dx*2.0))
+    #        kmax = int(math.ceil(hs_s[inds].max()*2.0/dx*2.0))+1
+    #        kmin = int(math.floor(hs_s[inds].min()*2.0/dx*2.0))
             
             # make everything the right size
-            kmax,kmin,xmin_t,xmax_t,ymin_t,ymax_t = map(np.int32,[kmax,kmin,xmin_t,xmax_t,ymin_t,ymax_t])
-            xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
+    #        kmax,kmin,xmin_t,xmax_t,ymin_t,ymax_t = map(np.int32,[kmax,kmin,xmin_t,xmax_t,ymin_t,ymax_t])
+    #        xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
             
-            drv.memcpy_htod_async(inds_gpu,inds.astype(np.int32),stream=my_stream)
 
-            kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,inds_gpu,np.int32(len(inds)),
-                   kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin_t,xmax_t,ymin_t,ymax_t,
-                   im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
-                   block=(nthreads,1,1),stream=my_stream)
+
+#    kernel(xs_gpu,ys_gpu,qts_gpu,hs_gpu,inds_gpu,len(inds),
+#                   kmin,kmax,xmin_p,xmax_p,ymin_p,ymax_p,xmin_t,xmax_t,ymin_t,ymax_t,
+#                   im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
+#                   block=(nthreads,1,1),stream=my_stream)
+
+    xmin,xmax,ymin,ymax = map(np.float32, [xmin,xmax,ymin,ymax])
+    print xmin,xmax,ymin,ymax
+    tile_start = time.clock()
+    kernel(xs_gpu, ys_gpu, qts_gpu, hs_gpu,
+           inds_gpu, parts_per_tile_gpu,
+           xmin, xmax, ymin, ymax,
+           im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),
+           block=(nthreads,1,1), grid = (Ntiles,1,1))
 
     if timing: print '<<< %d kernels launched in %f s'%(Ntiles,time.clock()-tile_start)
         # close if inds.shape[0]>0
@@ -177,8 +209,8 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # ----------------------------------------------------------------------------------
     if ind[1] != len(xs) : 
         start = time.clock()
-        image2 = (template_kernel_cpu(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:],
-                                      nx,ny,xmin,xmax,ymin,ymax)).T
+        image2 = (tile_render_kernel(xs[ind[1]:],ys[ind[1]:],qts[ind[1]:],hs[ind[1]:], np.int32(len(xs)-ind[1]),
+                                      xmin,xmax,ymin,ymax,image,nx,ny)).T
         if timing: print '<<< Processing %d particles with large smoothing lengths took %e s'%(len(xs)-ind[1],
                                                                                                time.clock()-start)
     drv.Context.synchronize()
