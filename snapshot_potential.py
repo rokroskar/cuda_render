@@ -1,10 +1,16 @@
-from pynbody import grav_omp
+try: 
+    from pynbody import grav_omp
+except ImportError: 
+    raise ImportError("This class is designed to work with pynbody snapshots -- obtain from pynbody.github.io")
+
 import numpy as np
 from galpy.potential import Potential
 import hashlib
 
 class SnapshotPotential(Potential):
-    """Create a snapshot potential object. The potential and forces are 
+    """
+
+    Create a snapshot potential object. The potential and forces are 
     calculated as needed through the _evaluate and _Rforce methods. 
     Requires an installation of [pynbody](http://pynbody.github.io).
     
