@@ -6,7 +6,7 @@ cuda-based renderer for simulation snapshots
 Dependencies
 ------------
 
-Uses (PyCuda)[http://mathema.tician.de/software/pycuda/], (Pynbody)[http://pynbody.github.io], and Numba, 
+Uses [PyCuda](http://mathema.tician.de/software/pycuda/), [Pynbody](http://pynbody.github.io), and Numba, 
 though the latter is not really necessary (just remove the jit/autojit statements).
 
 To run:
