@@ -159,7 +159,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   // declare shared array for local image 
   __shared__ float local_image[TILE_XDIM*TILE_YDIM];
   __shared__ int counter;
-
+  __shared__ float timer;
   int nx = xmax-xmin+1;
   int ny = ymax-ymin+1;
   
@@ -182,6 +182,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   kmax = 31;
 
   counter =0;
+  timer = 0.0;
   /*
     ------------------------------
     start the loop through kernels
@@ -216,7 +217,8 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
         else break;
       }
       end_t = clock();
-      
+      atomicAdd(&timer,end_t-start_t);
+
       Nper_kernel = end_ind-start_ind;
 
       /*-------------------------------------------------------------------------
@@ -268,7 +270,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
-
+  if(threadIdx.x==0) printf("tile = %d time spent in search = %f\n", tile_id, timer/(1215.*1000.));
 }
 
 

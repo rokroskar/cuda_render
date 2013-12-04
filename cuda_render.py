@@ -248,7 +248,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
             xmin_t,xmax_t,ymin_t,ymax_t = map(np.int32,[xmin_t,xmax_t,ymin_t,ymax_t])
             xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
             
-            if n_per_tile > nthreads*32: ngrid=8
+            if n_per_tile > nthreads*32: ngrid=4
             else : ngrid = 1
 
             tile_render_kernel(ps_tiles_gpu,tile_offsets_gpu,np.int32(i),
