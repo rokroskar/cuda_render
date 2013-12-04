@@ -24,8 +24,9 @@ import pynbody
 import cuda_render
 import numpy as np
 import numba
-numba.codegen.debug.logger.setLevel(0)
-import numba_template_render
+numba.codegen.debug.logger.setLevel(0) # this is here because in the current version of the continuum
+                                       # analytics distribution, the log levels are set to some 
+                                       # annoyingly high value
 
 s = pynbody.load(simulation)
 image = cuda_render.cu_template_render_image(s.d,800,800,-.5,.5,timing=True, nthreads=128)
