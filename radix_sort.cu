@@ -6,6 +6,24 @@
 
 using namespace cub;
 
+/* 
+
+  Perform a radix sort of a particle array using the provided keys. 
+  Calls the Nvidia CUB radix sort. 
+  
+  *Input:*
+    
+  int keys: keys used for sorting
+  Particle ps: particle array
+  int offset: where to start the sort
+  int num_items: how many particles to sort
+  
+  *Return:*
+    
+  Time in milliseconds that it took to do the sort on the device.
+  
+*/
+
 float radix_sort(int *keys, Particle *ps, int offset, int num_items)
 { 
   /* Note that keys and ps should be device pointers! */
