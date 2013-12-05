@@ -6,6 +6,8 @@ from Cython.Distutils import build_ext
 import subprocess
 import numpy
 
+cub_lib = os.environ['HOME']+'/cub'
+
 def find_in_path(name, path):
     "Find a file in a search path"
     #adapted fom http://code.activestate.com/recipes/52224-find-a-file-given-a-search-path/
@@ -57,7 +59,7 @@ except AttributeError:
 
 
 ext = Extension('radix_sort',
-                sources=['radix_sort.cu', 'radix_wrapper.pyx'],
+                sources=['cuda_render/radix_sort.cu', 'cuda_render/radix_wrapper.pyx'],
                 library_dirs=[CUDA['lib64']],
                 libraries=['cudart'],
                 language='c++',
@@ -67,7 +69,7 @@ ext = Extension('radix_sort',
                 # the implementation of this trick is in customize_compiler() below
                 extra_compile_args={'gcc': [],
                                     'nvcc': ['-arch=sm_20', '--ptxas-options=-v', '-c', '--compiler-options', "'-fPIC'"]},
-                include_dirs = [numpy_include, CUDA['include'], 'src', '../../../../src/cub'])
+                include_dirs = [numpy_include, CUDA['include'], 'src', cub_lib])
 
 print 'CUDA INCLUDE = ', CUDA['include']
 
@@ -115,15 +117,16 @@ class custom_build_ext(build_ext):
         customize_compiler_for_nvcc(self.compiler)
         build_ext.build_extensions(self)
 
-setup(name='radix_sort',
-      # random metadata. there's more you can supploy
-      author='Rok Roskar',
-      version='0.1',
-
-      ext_modules = [ext],
-
-      # inject our custom trigger
-      cmdclass={'build_ext': custom_build_ext},
-
-      # since the package has c code, the egg cannot be zipped
-      zip_safe=False)
+dist = setup(name='cuda_render',
+             # random metadata. there's more you can supploy
+             author='Rok Roskar',
+             author_email = 'roskar@physik.uzh.ch',
+             version='0.1',
+             package_dir = {'cuda_render/': ''},
+             ext_modules = [ext],
+             packages = ['cuda_render'],
+             # inject our custom trigger
+             cmdclass={'build_ext': custom_build_ext},
+             
+             # since the package has c code, the egg cannot be zipped
+             zip_safe=False)
