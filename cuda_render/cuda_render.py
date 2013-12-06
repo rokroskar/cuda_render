@@ -12,7 +12,7 @@ import scipy.integrate as integrate
 import math
 import time
 from bisect import bisect_left, bisect_right
-
+import os
 
 @autojit(nopyton=True)
 def get_tile_ids(tiles_physical,xmin,ymin,ps,tileids) :
@@ -25,7 +25,7 @@ def get_tile_ids(tiles_physical,xmin,ymin,ps,tileids) :
     tileids[:] = x_ind*np.sqrt(tiles_physical.shape[0]) + y_ind
 
 
-@autojit
+#@autojit
 def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim) : 
     # size of pixels in physical space
     dx = float(x_phys_max-x_phys_min)/float(nx)
@@ -126,7 +126,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # ------------------
     # set up the kernels
     # ------------------
-    code = file('/home/itp/roskar/homegrown/template_kernel.cu').read()
+    code = file(os.path.join(os.path.dirname(__file__),'template_kernel.cu')).read()
     mod = SourceModule(code,options=["--ptxas-options=-v"])
     tile_histogram = mod.get_function("tile_histogram")
     distribute_particles = mod.get_function("distribute_particles")

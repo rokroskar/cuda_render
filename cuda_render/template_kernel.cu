@@ -270,7 +270,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
   __syncthreads();
   /* update global image */
   update_image(global_image,local_image,xmin,ymin,nx_glob,nx,ny);
-  if(threadIdx.x==0) printf("tile = %d time spent in search = %f\n", tile_id, timer/(1215.*1000.));
+  //  if(threadIdx.x==0) printf("tile = %d time spent in search = %f\n", tile_id, timer/(1215.*1000.));
 }
 
 

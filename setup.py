@@ -6,6 +6,7 @@ from Cython.Distutils import build_ext
 import subprocess
 import numpy
 
+# set the CUB library path here
 cub_lib = os.environ['HOME']+'/cub'
 
 def find_in_path(name, path):
@@ -122,9 +123,10 @@ dist = setup(name='cuda_render',
              author='Rok Roskar',
              author_email = 'roskar@physik.uzh.ch',
              version='0.1',
-             package_dir = {'cuda_render/': ''},
-             ext_modules = [ext],
              packages = ['cuda_render'],
+             package_dir = {'cuda_render/': ''},
+             package_data = {'cuda_render': ['template_kernel.cu']},
+             ext_modules = [ext],
              # inject our custom trigger
              cmdclass={'build_ext': custom_build_ext},
              
