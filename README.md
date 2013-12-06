@@ -6,9 +6,11 @@ cuda-based renderer for simulation snapshots
 Dependencies
 ------------
 
-[PyCuda](http://mathema.tician.de/software/pycuda/)
-[Pynbody](http://pynbody.github.io) 
-Numba (not really necessary, if you don't have it just remove the `jit`/`autojit` statements).
+* [PyCuda](http://mathema.tician.de/software/pycuda/)
+
+* [Pynbody](http://pynbody.github.io) 
+
+* Numba (not really necessary, if you don't have it just remove the `jit`/`autojit` statements).
 
 The build will first try to make the `radix_sort` extension, which wraps the GPU radix sort kernel from the [Nvidia CUB library](http://nvlabs.github.io/cub/). This also requires the cuda toolkit to be installed. Make sure that `nvcc` and the CUB directory are in your path. Install the package with the usual
 
