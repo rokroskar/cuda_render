@@ -9,10 +9,10 @@ Dependencies
 Uses [PyCuda](http://mathema.tician.de/software/pycuda/), [Pynbody](http://pynbody.github.io), and Numba, 
 though the latter is not really necessary (just remove the `jit`/`autojit` statements).
 
-First build the `radix_sort` extension, which wraps the GPU radix sort kernel from the [Nvidia CUB library](http://nvlabs.github.io/cub/) (this requires the cuda toolkit to be installed and `nvcc` in your path) :
+The build will first try to make the `radix_sort` extension, which wraps the GPU radix sort kernel from the [Nvidia CUB library](http://nvlabs.github.io/cub/). This also requires the cuda toolkit to be installed. Make sure that `nvcc` and the CUB directory are in your path. Install the package with the usual
 
 ```
-> python setup_radix_sort.py build_ext --inplace 
+> python setup.py install
 ```
 
 
