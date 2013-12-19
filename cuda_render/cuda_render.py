@@ -161,6 +161,28 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     xmin,xmax,ymin,ymax = map(np.float32, [xmin,xmax,ymin,ymax])
     nx,ny,Ntiles = map(np.int32, [nx,ny,Ntiles])
 
+    # -----------------------------
+    # calculate pixels per particle
+    # -----------------------------
+
+    # allocate key arrays -- these will be keys to sort particles into softening bins
+    start_g.record()
+    keys_gpu = drv.mem_alloc(int(4*len(s)))
+    calculate_keys(ps_on_gpu, keys_gpu, np.int32(len(s)), np.float32(dx), 
+                   block=(nthreads,1,1),grid=(1024,1,1))
+    end_g.record()
+    end_g.synchronize()
+    if timing: print '<<< Key generation took %f ms'%(start_g.time_till(end_g))
+
+    # ----------------------------------------
+    # sort particles by their softening length
+    # ----------------------------------------
+    start_g.record()
+    radix_sort(int(keys_gpu), int(ps_on_gpu), np.int32(0), np.int32(len(s)))
+    end_g.record()
+    end_g.synchronize()
+    if timing: print '<<< Radix sorting all tiles took %f ms'%(start_g.time_till(end_g))
+
     start_g.record()
     tile_histogram(ps_on_gpu,hist_gpu,np.int32(len(ps_gpu)),xmin,xmax,ymin,ymax,nx,ny,Ntiles,
                    block=(nthreads,1,1),grid=(1024,1,1))
@@ -202,37 +224,9 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     drv.memcpy_htod(im_gpu,image.astype(np.float32))
    
 
-    # allocate key arrays -- these will be keys to sort particles into softening bins
-    start_g.record()
-    keys_gpu = drv.mem_alloc(int(4*hist.sum()))
-    calculate_keys(ps_tiles_gpu, keys_gpu, np.int32(hist.sum()), np.float32(dx), 
-                   block=(nthreads,1,1),grid=(1024,1,1))
-    end_g.record()
-    end_g.synchronize()
-    if timing: print '<<< Key generation took %f ms'%(start_g.time_till(end_g))
+    
 
-    keys = np.empty(hist.sum(), dtype=np.int32)
-
-
-    # ----------------------------------------
-    # sort particles by their softening length
-    # ----------------------------------------
-    start_g.record()
-    for i in xrange(Ntiles) : 
-        n_per_tile = tile_offsets[i+1] - tile_offsets[i]
-        if n_per_tile > 0 : 
-            radix_sort(int(keys_gpu), int(ps_tiles_gpu), tile_offsets[i], n_per_tile)
-    end_g.record()
-    end_g.synchronize()
-    if timing: print '<<< Radix sorting all tiles took %f ms'%(start_g.time_till(end_g))
-
-
-    drv.memcpy_dtoh(keys,keys_gpu)
-    drv.memcpy_dtoh(ps_tiles,ps_tiles_gpu)
-#    return keys,ps_tiles,tile_offsets,dx
-        
-    drv.Context.synchronize()
-
+  
     tile_start = time.clock()
     
     streams = [drv.Stream() for i in range(16)]    

@@ -179,7 +179,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
 
   start_ind = tile_offsets[tile_id];
   kmin = 1;
-  kmax = 51;
+  kmax = 101;
 
   counter =0;
   timer = 0.0;
