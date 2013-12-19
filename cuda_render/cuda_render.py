@@ -26,7 +26,7 @@ def get_tile_ids(tiles_physical,xmin,ymin,ps,tileids) :
 
 
 #@autojit
-def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim) : 
+def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim):
     # size of pixels in physical space
     dx = float(x_phys_max-x_phys_min)/float(nx)
     dy = float(y_phys_max-y_phys_min)/float(ny)
@@ -53,7 +53,7 @@ def make_tiles(nx, ny, x_phys_min, x_phys_max, y_phys_min, y_phys_max, max_dim) 
                                              
     return limits, limits_physical
 
-def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthreads=128):
+def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthreads=128, tile_size=100):
     """
     CPU part of the SPH render code that executes the rendering on the GPU
     
@@ -116,7 +116,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # -----------------------------------------------------------------
     
     start = time.clock()
-    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,100)
+    tiles_pix, tiles_physical = make_tiles(nx,ny,xmin,xmax,ymin,ymax,tile_size)
     if timing: print '<<< Tiles made in %f s'%(time.clock()-start)
 
     Ntiles = tiles_pix.shape[0]
@@ -163,7 +163,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
 
     start_g.record()
     tile_histogram(ps_on_gpu,hist_gpu,np.int32(len(ps_gpu)),xmin,xmax,ymin,ymax,nx,ny,Ntiles,
-                   block=(nthreads,1,1),grid=(32,1,1))
+                   block=(nthreads,1,1),grid=(1024,1,1))
 
     drv.Context.synchronize()
     drv.memcpy_dtoh(hist,hist_gpu)
@@ -206,7 +206,7 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     start_g.record()
     keys_gpu = drv.mem_alloc(int(4*hist.sum()))
     calculate_keys(ps_tiles_gpu, keys_gpu, np.int32(hist.sum()), np.float32(dx), 
-                   block=(nthreads,1,1),grid=(32,1,1))
+                   block=(nthreads,1,1),grid=(1024,1,1))
     end_g.record()
     end_g.synchronize()
     if timing: print '<<< Key generation took %f ms'%(start_g.time_till(end_g))
@@ -217,10 +217,15 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
     # ----------------------------------------
     # sort particles by their softening length
     # ----------------------------------------
+    start_g.record()
     for i in xrange(Ntiles) : 
         n_per_tile = tile_offsets[i+1] - tile_offsets[i]
         if n_per_tile > 0 : 
             radix_sort(int(keys_gpu), int(ps_tiles_gpu), tile_offsets[i], n_per_tile)
+    end_g.record()
+    end_g.synchronize()
+    if timing: print '<<< Radix sorting all tiles took %f ms'%(start_g.time_till(end_g))
+
 
     drv.memcpy_dtoh(keys,keys_gpu)
     drv.memcpy_dtoh(ps_tiles,ps_tiles_gpu)
@@ -248,9 +253,9 @@ def cu_template_render_image(s,nx,ny,xmin,xmax, qty='rho',timing = False, nthrea
             xmin_t,xmax_t,ymin_t,ymax_t = map(np.int32,[xmin_t,xmax_t,ymin_t,ymax_t])
             xmin_p,xmax_p,ymin_p,ymax_p = map(np.float32, [xmin_p,xmax_p,ymin_p,ymax_p])
             
-            if n_per_tile > nthreads*32: ngrid=4
-            else : ngrid = 1
-
+            if n_per_tile > nthreads*256: ngrid=128
+            else : ngrid = 64
+            
             tile_render_kernel(ps_tiles_gpu,tile_offsets_gpu,np.int32(i),
                                xmin_p,xmax_p,ymin_p,ymax_p,xmin_t,xmax_t,ymin_t,ymax_t,
                                im_gpu,np.int32(image.shape[0]),np.int32(image.shape[1]),

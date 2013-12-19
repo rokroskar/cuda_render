@@ -1,8 +1,8 @@
 #include <stdio.h>
 
 #define KSIZE 101
-#define TILE_XDIM 100
-#define TILE_YDIM 100
+#define TILE_XDIM 50
+#define TILE_YDIM 50
 #define TILE_SIZE TILE_XDIM*TILE_YDIM
 
 #define PI 3.141592654f
@@ -179,7 +179,7 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
 
   start_ind = tile_offsets[tile_id];
   kmin = 1;
-  kmax = 31;
+  kmax = 51;
 
   counter =0;
   timer = 0.0;
@@ -257,8 +257,9 @@ __global__ void tile_render_kernel(Particle *ps, int *tile_offsets, int tile_id,
                         {
                           d = sqrtf((float)(i-k/2)*(i-k/2)*dx*dx+
                                     (float)(j-k/2)*(j-k/2)*dy*dy);
-
-                          atomicAdd(&local_image[(i+left)+(j+upper)*nx],kernel_value(d*i_h, 1.0)*qt*i_h_cb);
+                        
+                          local_image[(i+left)+(j+upper)*nx] += kernel_value(d*i_h, 1.0)*qt*i_h_cb;
+                          //atomicAdd(&local_image[(i+left)+(j+upper)*nx],kernel_value(d*i_h, 1.0)*qt*i_h_cb);
                         }
                     }
                 }
